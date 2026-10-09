@@ -129,7 +129,7 @@ describe('model fitting', () => {
       const date = `2026-0${1 + (day % 8)}-${String(1 + (day % 27)).padStart(2, '0')}`;
       day++;
       const hg = h === 'Strong' ? 3 : 1, ag = a === 'Strong' ? 2 : 1;
-      records.push({ league: 'X', date, home: h, away: a, hg, ag, hthg: Math.floor(hg / 2), htag: 0, stats: {}, odds: {} });
+      records.push({ league: 'X', date, home: h, away: a, hg, ag, hthg: Math.floor(hg / 2), htag: 0, stats: {} });
     }
   }
   const opts = { decayPerDay: 0, shrinkage: 1, asOf: new Date('2026-12-01') };

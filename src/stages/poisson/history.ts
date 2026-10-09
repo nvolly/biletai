@@ -9,12 +9,6 @@ import { LeagueDef } from './leagues';
 export type StatKey = 'shots' | 'sot' | 'corners' | 'cards' | 'reds';
 export const STAT_KEYS: StatKey[] = ['shots', 'sot', 'corners', 'cards', 'reds'];
 
-export interface MatchOdds {
-  home?: number; draw?: number; away?: number;
-  over25?: number; under25?: number;
-  ahLine?: number; ahHome?: number; ahAway?: number; // AH line from the home side's view
-}
-
 export interface MatchRecord {
   league: string;
   date: string;            // YYYY-MM-DD
@@ -25,7 +19,6 @@ export interface MatchRecord {
   hthg?: number;
   htag?: number;
   stats: Partial<Record<StatKey, [number, number]>>;
-  odds: MatchOdds;
 }
 
 const BASE = 'https://www.football-data.co.uk';
@@ -97,22 +90,10 @@ export function parseCsv(text: string, league: string): MatchRecord[] {
     // "Cards" counts every card shown, so a red is one more card on top of the yellows.
     if (yellow && reds) stats.cards = [yellow[0] + reds[0], yellow[1] + reds[1]];
 
-    // Closing average prices first (the efficient benchmark), then Pinnacle, then Bet365.
-    const odds: MatchOdds = {
-      home: num(get('AvgCH', 'PSCH', 'B365CH', 'AvgH', 'B365H')),
-      draw: num(get('AvgCD', 'PSCD', 'B365CD', 'AvgD', 'B365D')),
-      away: num(get('AvgCA', 'PSCA', 'B365CA', 'AvgA', 'B365A')),
-      over25: num(get('AvgC>2.5', 'B365C>2.5', 'Avg>2.5', 'B365>2.5')),
-      under25: num(get('AvgC<2.5', 'B365C<2.5', 'Avg<2.5', 'B365<2.5')),
-      ahLine: num(get('AHCh', 'AHh')),
-      ahHome: num(get('AvgCAHH', 'B365CAHH', 'AvgAHH', 'B365AHH')),
-      ahAway: num(get('AvgCAHA', 'B365CAHA', 'AvgAHA', 'B365AHA')),
-    };
-
     out.push({
       league, date, home, away, hg, ag,
       hthg: num(get('HTHG')), htag: num(get('HTAG')),
-      stats, odds,
+      stats,
     });
   }
   return out;
