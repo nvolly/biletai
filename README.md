@@ -1,13 +1,13 @@
-# TicketMind
+# BiletAI
 
 AI football ticket generator. Statistical models plus AI news analysis build tickets of
 per-match combinations ("builders"). Each comes with its **probability** and **fair odds**.
-TicketMind is not connected to any bookmaker: it never shows, links or prices one.
+BiletAI is not connected to any bookmaker: it never shows, links or prices one.
 
 ## How it works
 
 ```
- Apps (desktop now; mobile later)          TicketMind server (EU VPS, ~5-10 EUR/month)
+ Apps (desktop now; mobile later)          BiletAI server (EU VPS, ~5-10 EUR/month)
   - sign in with an access key      ──►     - AI keys live ONLY here (environment)
   - choose tickets, matches, odds           - accounts, free + paid generations
   - see tickets, copy them           ◄──    - the engine below

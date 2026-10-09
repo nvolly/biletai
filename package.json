@@ -1,7 +1,7 @@
 {
-  "name": "ticketmind",
+  "name": "biletai",
   "version": "0.1.0",
-  "description": "TicketMind - AI football ticket generator: statistical models + AI news analysis, served from a private API server",
+  "description": "BiletAI - AI football ticket generator: statistical models + AI news analysis, served from a private API server",
   "private": true,
   "scripts": {
     "server": "tsx src/server/server.ts",

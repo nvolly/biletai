@@ -5,7 +5,7 @@ import * as yaml from 'js-yaml';
 import { z } from 'zod';
 
 /**
- * TicketMind configuration. Secrets come ONLY from the server's environment (a .env on the
+ * BiletAI configuration. Secrets come ONLY from the server's environment (a .env on the
  * server, or the hosting provider's secret settings). The desktop/mobile apps never see them.
  */
 dotenv.config();

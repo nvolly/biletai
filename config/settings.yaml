@@ -1,4 +1,4 @@
-# TicketMind server settings. Secrets are NOT here: they come from the server environment
+# BiletAI server settings. Secrets are NOT here: they come from the server environment
 # (.env on the server or the hosting provider's secret settings) — see .env.example.
 
 builder: # one Bet Builder-style combination on ONE match
@@ -51,5 +51,5 @@ server:
 
 # Placeholder plans — prices to be decided (and legal check done) before launch.
 plans:
-  - { id: p10, name: '10 generations', generations: 10, priceRon: 29 }
-  - { id: p50, name: '50 generations', generations: 50, priceRon: 99 }
+  - { id: p10, name: '10 generări', generations: 10, priceRon: 29 }
+  - { id: p50, name: '50 generări', generations: 50, priceRon: 99 }

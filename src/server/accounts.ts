@@ -40,7 +40,7 @@ export function createUser(email: string, credits = 0): { user: User; accessKey:
   const e = email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error('invalid email');
   if (users.some((u) => u.email === e)) throw new Error('a user with this email already exists');
-  const accessKey = `tm_${randomBytes(24).toString('base64url')}`;
+  const accessKey = `bai_${randomBytes(24).toString('base64url')}`;
   const user: User = {
     id: randomBytes(8).toString('hex'), email: e, keyHash: hash(accessKey),
     freeLeft: settings.server.freeGenerations, credits, used: 0, createdAt: new Date().toISOString(),
@@ -73,7 +73,7 @@ export function rotateKey(email: string): string {
   const users = load();
   const u = users.find((x) => x.email === email.trim().toLowerCase());
   if (!u) throw new Error('no such user');
-  const accessKey = `tm_${randomBytes(24).toString('base64url')}`;
+  const accessKey = `bai_${randomBytes(24).toString('base64url')}`;
   u.keyHash = hash(accessKey);
   save(users);
   return accessKey;

@@ -59,6 +59,14 @@ export interface GenerationResult {
 
 type Log = (line: string) => void;
 
+/** Jev's drop reasons, as the Romanian app shows them. */
+const reasonRo = (r: string) => r
+  .replace(/^key player missing/, 'jucător important absent')
+  .replace(/^rotation/, 'rotație probabilă')
+  .replace(/^low info quality/, 'prea puține informații')
+  .replace(/^high risk/, 'risc ridicat')
+  .replace(/^jev unavailable.*/, 'analiza AI indisponibilă');
+
 function bands(lo: number, hi: number): [number, number][] {
   const r = Math.pow(hi / lo, 1 / 3);
   return [[lo, lo * r], [lo * r, lo * r * r], [lo * r * r, hi]];
@@ -105,7 +113,7 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
     leagues: req.leagues ?? [],
     ai: (req.ai ?? true) && settings.ai.enabled,
   };
-  if (!(request.maxOdds > request.minOdds)) throw new Error('maxOdds must be above minOdds');
+  if (!(request.maxOdds > request.minOdds)) throw new Error('Cota maximă trebuie să fie mai mare decât cea minimă.');
   const log: string[] = [];
   const say: Log = (l) => { log.push(l); onLog(l); };
   const needed = request.tickets * request.matches;
@@ -114,14 +122,14 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
 
   let fixtures = (await source.upcoming(request.windowHours)).filter((f) => bank.leagues.has(f.league));
   if (request.leagues.length) fixtures = fixtures.filter((f) => request.leagues.includes(f.league));
-  say(`${fixtures.length} upcoming matches in the next ${request.windowHours}h; need ${needed}`);
+  say(`${fixtures.length} meciuri în următoarele ${request.windowHours} ore; sunt necesare ${needed}`);
 
   const prepared: Prepared[] = [];
   for (const f of fixtures) {
     const p = prepare(bank, f, opts, bandList);
     if (typeof p === 'string') logger.debug(p); else prepared.push(p);
   }
-  say(`${prepared.length} matches have a combination at ${request.minOdds}-${request.maxOdds}`);
+  say(`${prepared.length} meciuri au o combinație cu cota ${request.minOdds}-${request.maxOdds}`);
 
   // Spread the builders over the odds bands; fall back to any band the match has.
   const pick = (p: Prepared, k: number): Builder => p.byBand[k % 3] ?? p.byBand.find(Boolean)!;
@@ -146,10 +154,10 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
           form: { home: news?.home.recentForm ?? 'unknown', away: news?.away.recentForm ?? 'unknown' }, market: marketLabels(p.f),
         };
         const verdict = await filterMatch(state);
-        if (!verdict.keep) { say(`skipped ${label}: ${verdict.reasons.join('; ')}`); continue; }
+        if (!verdict.keep) { say(`sărit ${label}: ${verdict.reasons.map(reasonRo).join('; ')}`); continue; }
         const bld = pick(p, chosen.length);
         const check = await checkBuilder(state, bld.legs, bld.probability);
-        if (!check.ok) { say(`skipped ${label}: selections don't fit the news (${check.consistency?.toFixed(2) ?? 'n/a'})`); continue; }
+        if (!check.ok) { say(`sărit ${label}: selecțiile nu se potrivesc cu știrile`); continue; }
         if (chosen.length >= needed) return;
         const explanation = await explainBuilder({ match: label, news, legs: bld.legs, probability: bld.probability });
         chosen.push(toMatch(p, bld, bld.probability * verdict.weight, {
@@ -173,6 +181,6 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
     tk.fairOdds = tk.matches.reduce((a, m) => a * m.fairOdds, 1);
   }
   const result = tickets.filter((tk) => tk.matches.length);
-  say(`done: ${result.length} ticket(s), ${chosen.length} of ${needed} matches`);
+  say(`gata: ${result.length} bilet(e), ${chosen.length} din ${needed} meciuri`);
   return { createdAt: new Date().toISOString(), request, tickets: result, found: chosen.length, needed, aiUsed: request.ai, log };
 }

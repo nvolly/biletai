@@ -12,7 +12,7 @@ import { FatalPipelineError } from '../stages/news/newsAgent';
 import { canGenerate, charge, createUser, findByKey, User } from './accounts';
 
 /**
- * TicketMind API server. Holds the AI keys (environment only) and runs every generation;
+ * BiletAI API server. Holds the AI keys (environment only) and runs every generation;
  * the apps only send parameters and read results, so no key ever ships to a customer.
  *
  *   GET  /v1/health                  status, leagues ready
@@ -66,7 +66,7 @@ async function pump() {
   } catch (e: any) {
     job.status = 'failed';
     // Account problems on our side are not the customer's business: give a generic message.
-    job.error = e instanceof FatalPipelineError ? 'The analysis service is temporarily unavailable. You were not charged.' : (e?.message ?? String(e));
+    job.error = e instanceof FatalPipelineError ? 'Serviciul de analiză nu e disponibil momentan. Nu ți s-a consumat nicio generare.' : (e?.message ?? String(e));
     logger.error(`job ${job.id} failed: ${e?.message ?? e}`);
   } finally {
     busy = false;
@@ -124,13 +124,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     const user = auth(req);
-    if (p.startsWith('/v1/') && !user) return send(res, 401, { error: 'Missing or invalid access key.' });
+    if (p.startsWith('/v1/') && !user) return send(res, 401, { error: 'Cheie de acces lipsă sau invalidă.' });
 
     if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: settings.plans, limits: settings.tickets });
     if (req.method === 'POST' && p === '/v1/generate') {
-      if (!canGenerate(user!)) return send(res, 402, { error: 'No generations left. Choose a plan to continue.', plans: settings.plans });
+      if (!canGenerate(user!)) return send(res, 402, { error: 'Nu mai ai generări. Alege un abonament ca să continui.', plans: settings.plans });
       if ([...jobs.values()].some((j) => j.userId === user!.id && (j.status === 'queued' || j.status === 'running'))) {
-        return send(res, 409, { error: 'You already have a generation in progress.' });
+        return send(res, 409, { error: 'Ai deja o generare în curs.' });
       }
       const b = await body(req);
       const request: GenerateRequest = {
@@ -139,7 +139,7 @@ const server = http.createServer(async (req, res) => {
         maxLegs: b.maxLegs != null ? Number(b.maxLegs) : undefined, windowHours: b.windowHours != null ? Number(b.windowHours) : undefined,
         leagues: Array.isArray(b.leagues) ? b.leagues.map(String).slice(0, 60) : [],
       };
-      if (![request.tickets, request.matches].every((n) => Number.isFinite(n) && n >= 1)) return send(res, 400, { error: 'tickets and matches must be at least 1' });
+      if (![request.tickets, request.matches].every((n) => Number.isFinite(n) && n >= 1)) return send(res, 400, { error: 'Numărul de bilete și de meciuri trebuie să fie cel puțin 1.' });
       const job: Job = { id: randomBytes(9).toString('base64url'), userId: user!.id, status: 'queued', request, log: [], createdAt: new Date().toISOString() };
       jobs.set(job.id, job);
       queue.push(job);
@@ -168,7 +168,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   const url = `http://127.0.0.1:${PORT}`;
-  console.log(`\n  TicketMind server on ${url}\n`);
+  console.log(`\n  BiletAI server on ${url}\n`);
   if (process.argv.includes('--open')) {
     // Development: open the desktop UI in a Chrome app window.
     const chrome = ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA']
