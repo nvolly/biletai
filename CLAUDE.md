@@ -116,6 +116,15 @@ Status:
 7. **Data licence:** confirm football-data.co.uk's commercial terms or switch to a licensed
    feed behind `FixtureSource` (`engine/fixtures.ts`).
 
+## To do later (owner, 2026-10-09)
+
+- [ ] **Server online:** rent the EU VPS and point a domain at it; then deploy the server and
+      set `desktop/config.json` → `serverUrl` to its HTTPS address.
+- [ ] **Code-signing certificate** for the Windows installer (~€100–300/year), so
+      SmartScreen doesn't warn on install.
+- [ ] **Owner access key:** it still starts with `tm_` (TicketMind era). Works fine; reissue a
+      `bai_` key with `npm run user -- key owner@ticketmind.local` when convenient.
+
 ## Costs (measured on the private tool, 2026-10-07)
 
 - DeepSeek news ≈ **$0.003 per match researched**, after the cost cuts: 2 web searches,
