@@ -97,6 +97,20 @@ Status:
   - **Builders:** best builder per match in three odds bands spread over the requested range.
   - **AI on the matches about to be used:** news → Jev filter → Jev consistency check →
     Romanian explanation.
+- **Results tracker** (`engine/settle.ts`): after every model refresh (12h) each stored pick
+  is settled against the real result, by running the catalogue test that priced it on the
+  played match. It writes `data/track-record.json` (what we said vs what came in, per
+  probability range), shown in the app as "Rezultate reale". It's honest marketing: facts,
+  not promises. Results lag ~2 weeks, so it fills slowly.
+- **AI assistant** (`stages/news/assistant.ts`, owner 2026-10-09; a hybrid, not a chatbot
+  screen): a one-line request box that fills in the form (never generates by itself), and
+  "Întreabă despre bilet", a chat limited to one generation's numbers and news. Its rules:
+  no promises, no bookmakers, no stake advice. Limits: 10 questions per generation, 40
+  requests and 60 questions per user per day.
+- **App experience** (`client/index.html`): live narration of the progress as typed chat
+  bubbles; scoreboard clocks (kickoff time, then the final score); fill-in mode (tick each
+  pick while adding it elsewhere, type the odds offered and compare with the cotă corectă);
+  a share image with the 18+ / no-guarantees line built in.
 - **Secrets:** `.env` on the server (`DEEPSEEK_API_KEY`, `TYPESAFE_API_KEY`, `ADMIN_TOKEN`).
   Never commit it; never put a key in `client/`.
 
@@ -131,6 +145,16 @@ Status:
       SmartScreen doesn't warn on install.
 - [ ] **Owner access key:** it still starts with `tm_` (TicketMind era). Works fine; reissue a
       `bai_` key with `npm run user -- key owner@ticketmind.local` when convenient.
+- [ ] **Ask the lawyer about "Compară cota"** (fill-in mode): the user types the odds they were
+      offered and the app compares them with the cotă corectă. No bookmaker is named or linked,
+      but it touches odds.
+- [ ] **Licensed data feed** (also needed for commercial use). Choose it for: European cups and
+      national teams (missing today), Liga 1 statistics (goals-only today), fresh results
+      (today ~2 weeks late), confirmed lineups (re-check tickets ~1h before kickoff), xG.
+- [ ] **Accounts in a real database** (SQLite is enough) instead of `data/users.json`, before
+      launch.
+- [ ] **Rebuild the installer** (`npm run desktop:dist`) before sharing it: the copy in
+      `desktop/dist/` predates the bet types and the new features.
 
 ## Costs (measured on the private tool, 2026-10-07)
 

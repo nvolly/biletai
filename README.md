@@ -24,6 +24,8 @@ The engine (`src/`):
 | Selections | Per match, by bet type: **Simplu** = the best single selection, **Combinat** = the best combination of 2-4 selections; either in an odds band, fair odds = 1 / probability | `engine/catalogue.ts`, `engine/builder.ts` |
 | AI | DeepSeek web-searched team news; TypeSafe Jev drops risky matches and checks each builder against the news; a short explanation | `stages/news/`, `stages/jev/` |
 | Tickets | Matches dealt round-robin over the tickets; ticket probability and fair odds are cumulated (multiplied) over its independent matches | `engine/generate.ts` |
+| Results | Every stored pick settled against the real result; track record per probability range | `engine/settle.ts` |
+| Assistant | Request box (text → settings) and a chat about one generation, both with guardrails and limits | `stages/news/assistant.ts` |
 
 ## Run it locally
 
@@ -65,7 +67,10 @@ All `/v1` calls need `Authorization: Bearer <access key>`.
 | `GET /v1/leagues` | Leagues the models cover |
 | `POST /v1/generate` | `{tickets, matches, betType: "simple" \| "combo", minOdds, maxOdds, maxLegs, windowHours, leagues}` → `{jobId}` |
 | `GET /v1/jobs/:id` | Progress log; when done, the tickets |
-| `GET /v1/history` | The caller's recent generations |
+| `GET /v1/history` | The caller's recent generations (settled matches carry their result) |
+| `GET /v1/track-record` | How every settled pick did against the probability shown |
+| `POST /v1/parse` | `{text}` → settings for the form (the one-line request box) |
+| `POST /v1/ask` | `{generationId, question}` → `{answer, left}`: questions about one generation's tickets |
 | `POST /admin/users` | Header `X-Admin-Token`; creates a user and returns its access key |
 
 A generation is charged only when it succeeds, free generations first. One generation runs
