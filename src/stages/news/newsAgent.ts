@@ -157,17 +157,19 @@ export async function explainBuilder(input: {
   news: MatchNews | null;
   legs: { market: string; pick: string; probability: number }[];
   probability: number;
+  lang: 'ro' | 'en';
 }): Promise<string> {
+  // Shown to the user as written, in the language they chose in the app.
+  const language = input.lang === 'ro' ? 'ROMANIAN (natural, simple, with correct diacritics)' : 'ENGLISH (natural and simple)';
   try {
     const parsed = await structured(ExplanationSchema,
       `Football match: ${input.match}. A statistical model suggests this combination of selections ` +
-        `(market names are Romanian), which all have to happen together (model probability ${(input.probability * 100).toFixed(1)}%):\n` +
+        `(market names are ${input.lang === 'ro' ? 'Romanian' : 'English'}), which all have to happen together ` +
+        `(model probability ${(input.probability * 100).toFixed(1)}%):\n` +
         input.legs.map((l) => `- ${l.market}: ${l.pick} (${(l.probability * 100).toFixed(0)}% on its own)`).join('\n') +
         `\n\nTeam news: ${input.news ? JSON.stringify(input.news) : 'unavailable'}\n\n` +
-        // The app is for the Romanian public: the explanation is shown as written.
-        `Write 2-3 sentences IN ROMANIAN (natural, simple, with correct diacritics) for a football fan: what has to ` +
-        `happen and why the numbers or the news support it. Do not promise any result, do not overstate certainty, ` +
-        `and do not invent facts beyond the numbers and the news.`,
+        `Write 2-3 sentences IN ${language} for a football fan: what has to happen and why the numbers or the news ` +
+        `support it. Do not promise any result, do not overstate certainty, and do not invent facts beyond the numbers and the news.`,
       800);
     return parsed?.summary ?? '';
   } catch (err: any) {

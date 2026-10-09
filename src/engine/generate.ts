@@ -10,6 +10,7 @@ import { filterMatch, checkBuilder, MatchState } from '../stages/jev/jevStage';
 import { buildBest, candidates, Builder, BuilderOptions, Leg } from './builder';
 import { catalogue } from './catalogue';
 import { Fixture, FixtureSource, footballDataFixtures } from './fixtures';
+import { Lang, MSG, reason } from '../i18n';
 
 /**
  * One generation: N tickets of M matches, each match a builder (2-4 selections on that
@@ -33,6 +34,7 @@ export interface GenerateRequest {
   windowHours?: number;
   leagues?: string[];        // model codes; empty = all
   ai?: boolean;
+  lang?: Lang;               // language of everything the user sees (markets, progress, AI text)
 }
 
 export interface TicketMatch {
@@ -59,14 +61,6 @@ export interface GenerationResult {
 
 type Log = (line: string) => void;
 
-/** Jev's drop reasons, as the Romanian app shows them. */
-const reasonRo = (r: string) => r
-  .replace(/^key player missing/, 'jucător important absent')
-  .replace(/^rotation/, 'rotație probabilă')
-  .replace(/^low info quality/, 'prea puține informații')
-  .replace(/^high risk/, 'risc ridicat')
-  .replace(/^jev unavailable.*/, 'analiza AI indisponibilă');
-
 function bands(lo: number, hi: number): [number, number][] {
   const r = Math.pow(hi / lo, 1 / 3);
   return [[lo, lo * r], [lo * r, lo * r * r], [lo * r * r, hi]];
@@ -83,7 +77,7 @@ function marketLabels(f: Fixture): Record<string, string> {
 interface Prepared { f: Fixture; byBand: (Builder | null)[] }
 
 /** The free part for one fixture: models, market blend, simulation, best builder per band. */
-function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [number, number][]): Prepared | string {
+function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [number, number][], lang: Lang): Prepared | string {
   const r = modelFor(bank, f.league, f.home, f.away);
   if (!r.ok) return `skip ${f.home} v ${f.away}: ${r.reason}`;
   const model = r.model;
@@ -96,7 +90,7 @@ function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [n
     model.goals.la = blend(model.goals.la, la, settings.model.modelWeight);
   }
   const sim = simulate(model, bank.chol, settings.model.simulations, hashSeed(f.id));
-  const pool = candidates(sim, catalogue(f.home, f.away), new Set(r.modelled), opts);
+  const pool = candidates(sim, catalogue(f.home, f.away, lang), new Set(r.modelled), opts);
   const byBand = bandList.map(([lo, hi]) => buildBest(sim, pool, { ...opts, minOdds: lo, maxOdds: hi }, 1)[0] ?? null);
   return byBand.some(Boolean) ? { f, byBand } : `none ${f.home} v ${f.away}: no combination in the odds range`;
 }
@@ -112,8 +106,10 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
     windowHours: Math.min(req.windowHours ?? t.windowHours, 240),
     leagues: req.leagues ?? [],
     ai: (req.ai ?? true) && settings.ai.enabled,
+    lang: req.lang ?? 'ro',
   };
-  if (!(request.maxOdds > request.minOdds)) throw new Error('Cota maximă trebuie să fie mai mare decât cea minimă.');
+  const T = MSG[request.lang];
+  if (!(request.maxOdds > request.minOdds)) throw new Error(T.oddsOrder);
   const log: string[] = [];
   const say: Log = (l) => { log.push(l); onLog(l); };
   const needed = request.tickets * request.matches;
@@ -122,14 +118,14 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
 
   let fixtures = (await source.upcoming(request.windowHours)).filter((f) => bank.leagues.has(f.league));
   if (request.leagues.length) fixtures = fixtures.filter((f) => request.leagues.includes(f.league));
-  say(`${fixtures.length} meciuri în următoarele ${request.windowHours} ore; sunt necesare ${needed}`);
+  say(T.upcoming(fixtures.length, request.windowHours, needed));
 
   const prepared: Prepared[] = [];
   for (const f of fixtures) {
-    const p = prepare(bank, f, opts, bandList);
+    const p = prepare(bank, f, opts, bandList, request.lang);
     if (typeof p === 'string') logger.debug(p); else prepared.push(p);
   }
-  say(`${prepared.length} meciuri au o combinație cu cota ${request.minOdds}-${request.maxOdds}`);
+  say(T.withCombo(prepared.length, request.minOdds, request.maxOdds));
 
   // Spread the builders over the odds bands; fall back to any band the match has.
   const pick = (p: Prepared, k: number): Builder => p.byBand[k % 3] ?? p.byBand.find(Boolean)!;
@@ -154,16 +150,16 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
           form: { home: news?.home.recentForm ?? 'unknown', away: news?.away.recentForm ?? 'unknown' }, market: marketLabels(p.f),
         };
         const verdict = await filterMatch(state);
-        if (!verdict.keep) { say(`sărit ${label}: ${verdict.reasons.map(reasonRo).join('; ')}`); continue; }
+        if (!verdict.keep) { say(T.skipped(label, verdict.reasons.map((r) => reason(request.lang, r)).join('; '))); continue; }
         const bld = pick(p, chosen.length);
         const check = await checkBuilder(state, bld.legs, bld.probability);
-        if (!check.ok) { say(`sărit ${label}: selecțiile nu se potrivesc cu știrile`); continue; }
+        if (!check.ok) { say(T.skipped(label, T.notFit)); continue; }
         if (chosen.length >= needed) return;
-        const explanation = await explainBuilder({ match: label, news, legs: bld.legs, probability: bld.probability });
+        const explanation = await explainBuilder({ match: label, news, legs: bld.legs, probability: bld.probability, lang: request.lang });
         chosen.push(toMatch(p, bld, bld.probability * verdict.weight, {
           explanation, jev: { risk: verdict.flags.riskHigh, infoLow: verdict.flags.infoLow, consistency: check.consistency },
         }));
-        say(`+ ${label}: ${bld.legs.map((l) => `${l.market} ${l.pick}`).join(' + ')} @ ${bld.fairOdds.toFixed(2)} (${chosen.length}/${needed})`);
+        say(T.added(label, bld.legs.map((l) => `${l.market} ${l.pick}`).join(' + '), bld.fairOdds.toFixed(2), chosen.length, needed));
       }
     };
     try {
@@ -181,6 +177,6 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
     tk.fairOdds = tk.matches.reduce((a, m) => a * m.fairOdds, 1);
   }
   const result = tickets.filter((tk) => tk.matches.length);
-  say(`gata: ${result.length} bilet(e), ${chosen.length} din ${needed} meciuri`);
+  say(T.done(result.length, chosen.length, needed));
   return { createdAt: new Date().toISOString(), request, tickets: result, found: chosen.length, needed, aiUsed: request.ai, log };
 }

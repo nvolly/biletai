@@ -10,6 +10,7 @@ import { LEAGUES } from '../stages/poisson/leagues';
 import { generate, GenerateRequest, GenerationResult } from '../engine/generate';
 import { FatalPipelineError } from '../stages/news/newsAgent';
 import { canGenerate, charge, createUser, findByKey, User } from './accounts';
+import { asLang, MSG } from '../i18n';
 
 /**
  * BiletAI API server. Holds the AI keys (environment only) and runs every generation;
@@ -66,7 +67,7 @@ async function pump() {
   } catch (e: any) {
     job.status = 'failed';
     // Account problems on our side are not the customer's business: give a generic message.
-    job.error = e instanceof FatalPipelineError ? 'Serviciul de analiză nu e disponibil momentan. Nu ți s-a consumat nicio generare.' : (e?.message ?? String(e));
+    job.error = e instanceof FatalPipelineError ? MSG[job.request.lang ?? 'ro'].aiUnavailable : (e?.message ?? String(e));
     logger.error(`job ${job.id} failed: ${e?.message ?? e}`);
   } finally {
     busy = false;
@@ -78,9 +79,11 @@ async function pump() {
 // ---- HTTP ----
 function send(res: http.ServerResponse, code: number, data: unknown) {
   res.writeHead(code, {
-    'content-type': 'application/json',
+    // Explicit charset: Romanian diacritics must survive every client (PowerShell and some
+    // mobile webviews fall back to Latin-1 without it).
+    'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization, content-type',
+    'access-control-allow-headers': 'authorization, content-type, x-lang',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
   });
   res.end(JSON.stringify(data));
@@ -104,6 +107,8 @@ const publicUser = (u: User) => ({ email: u.email, freeLeft: u.freeLeft, credits
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
+  // The app sends its language with every call; errors and generated text follow it.
+  const T = MSG[asLang(req.headers['x-lang'])];
   try {
     if (req.method === 'OPTIONS') return send(res, 204, {});
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
@@ -124,13 +129,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     const user = auth(req);
-    if (p.startsWith('/v1/') && !user) return send(res, 401, { error: 'Cheie de acces lipsă sau invalidă.' });
+    if (p.startsWith('/v1/') && !user) return send(res, 401, { error: T.badKey });
 
     if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: settings.plans, limits: settings.tickets });
     if (req.method === 'POST' && p === '/v1/generate') {
-      if (!canGenerate(user!)) return send(res, 402, { error: 'Nu mai ai generări. Alege un abonament ca să continui.', plans: settings.plans });
+      if (!canGenerate(user!)) return send(res, 402, { error: T.noCredits, plans: settings.plans });
       if ([...jobs.values()].some((j) => j.userId === user!.id && (j.status === 'queued' || j.status === 'running'))) {
-        return send(res, 409, { error: 'Ai deja o generare în curs.' });
+        return send(res, 409, { error: T.busy });
       }
       const b = await body(req);
       const request: GenerateRequest = {
@@ -138,8 +143,9 @@ const server = http.createServer(async (req, res) => {
         minOdds: b.minOdds != null ? Number(b.minOdds) : undefined, maxOdds: b.maxOdds != null ? Number(b.maxOdds) : undefined,
         maxLegs: b.maxLegs != null ? Number(b.maxLegs) : undefined, windowHours: b.windowHours != null ? Number(b.windowHours) : undefined,
         leagues: Array.isArray(b.leagues) ? b.leagues.map(String).slice(0, 60) : [],
+        lang: asLang(b.lang ?? req.headers['x-lang']),
       };
-      if (![request.tickets, request.matches].every((n) => Number.isFinite(n) && n >= 1)) return send(res, 400, { error: 'Numărul de bilete și de meciuri trebuie să fie cel puțin 1.' });
+      if (![request.tickets, request.matches].every((n) => Number.isFinite(n) && n >= 1)) return send(res, 400, { error: T.minOne });
       const job: Job = { id: randomBytes(9).toString('base64url'), userId: user!.id, status: 'queued', request, log: [], createdAt: new Date().toISOString() };
       jobs.set(job.id, job);
       queue.push(job);
@@ -149,7 +155,7 @@ const server = http.createServer(async (req, res) => {
     const jm = p.match(/^\/v1\/jobs\/([\w-]+)$/);
     if (req.method === 'GET' && jm) {
       const job = jobs.get(jm[1]);
-      if (!job || job.userId !== user!.id) return send(res, 404, { error: 'not found' });
+      if (!job || job.userId !== user!.id) return send(res, 404, { error: T.notFound });
       // Re-read the user so the remaining generations reflect a charge made by this job.
       return send(res, 200, { id: job.id, status: job.status, log: job.log, result: job.result, error: job.error, me: publicUser(auth(req) ?? user!) });
     }

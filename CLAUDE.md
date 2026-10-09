@@ -11,10 +11,21 @@ ticket gets a combination of 2–4 selections (a "builder"), with its **probabil
 
 - **Platforms:** desktop (Windows first), **Android** and **iOS**, and a website that presents
   the app and links to Google Play, the App Store and the desktop download.
-- **Language:** all user-facing text is **Romanian with correct diacritics**: the UI, market
-  names in `engine/catalogue.ts`, server error messages, progress lines and the AI
-  explanations (the prompt in `stages/news/newsAgent.ts` asks for Romanian). Code, comments
-  and this file stay in English.
+- **Language: Romanian (default) and English**, switched with the RO/EN button in the app
+  (owner, 2026-10-09). **When RO is chosen, everything the user sees is Romanian with
+  diacritics:**
+  - the UI and country names;
+  - market names (`engine/catalogue.ts` via `src/i18n.ts`);
+  - progress lines and Jev's drop reasons (`reason()` in `src/i18n.ts`);
+  - server errors (`X-Lang` header);
+  - **DeepSeek's explanations** (`explainBuilder({ lang })`).
+
+  Add any new user-facing string to `src/i18n.ts` (server) or the `T` dictionary in
+  `client/index.html` (app), in both languages. Team names stay as the data source writes
+  them. Code, comments and this file stay in English.
+- **Look: black and white only.** White page with black ink, or black page with white ink in
+  dark mode (follows the system; the ◐ button toggles it). No colours: emphasis comes from
+  weight, inverted blocks and borders.
 - **Money:** free generations first (`server.freeGenerations`, 3), then paid plans
   (`plans` in `config/settings.yaml`, placeholders: 10 generări = 29 lei, 50 = 99 lei).
 - **Owner:** Vali. Prefers Romanian in conversation, fast runs and low API costs.

@@ -1,5 +1,6 @@
 import { StatKey } from '../stages/poisson/history';
 import { Simulation } from '../stages/poisson/simulate';
+import { Lang, MARKETS } from '../i18n';
 
 /**
  * Every selection BiletAI can put on a ticket, as a test over one simulated match.
@@ -34,60 +35,59 @@ const count = (s: Simulation, i: number, stat: StatKey, side: Side): number => {
 
 const result = (h: number, a: number) => (h > a ? 'H' : h < a ? 'A' : 'D');
 
-const cap = (x: string) => x[0].toUpperCase() + x.slice(1);
-
-/** Over/under (Peste/Sub) pairs on a list of lines. */
+/** Over/under pairs on a list of lines. */
 function lines(idBase: string, family: string, market: string, needs: Selection['needs'], ls: number[],
-  value: (s: Simulation, i: number) => number): Selection[] {
+  value: (s: Simulation, i: number) => number, L: (typeof MARKETS)[Lang]): Selection[] {
   const out: Selection[] = [];
   for (const l of ls) {
-    out.push({ id: `${idBase}.over.${l}`, family, market, pick: `Peste ${l}`, needs, test: (s, i) => value(s, i) > l });
-    out.push({ id: `${idBase}.under.${l}`, family, market, pick: `Sub ${l}`, needs, test: (s, i) => value(s, i) < l });
+    out.push({ id: `${idBase}.over.${l}`, family, market, pick: `${L.over} ${l}`, needs, test: (s, i) => value(s, i) > l });
+    out.push({ id: `${idBase}.under.${l}`, family, market, pick: `${L.under} ${l}`, needs, test: (s, i) => value(s, i) < l });
   }
   return out;
 }
 
-/** The catalogue for one fixture (team names go into the labels). */
-export function catalogue(home: string, away: string): Selection[] {
+/** The catalogue for one fixture, labelled in `lang` (team names go into the labels). */
+export function catalogue(home: string, away: string, lang: Lang = 'ro'): Selection[] {
+  const L = MARKETS[lang];
   const G: Selection['needs'] = ['goals'];
   const sel: Selection[] = [];
 
   // Result and double chance
-  for (const [k, pick, want] of [['1', home, 'H'], ['X', 'Egal', 'D'], ['2', away, 'A']] as const) {
-    sel.push({ id: `result.${k}`, family: 'result', market: 'Rezultat final', pick, needs: G, test: (s, i) => result(s.gh[i], s.ga[i]) === want });
+  for (const [k, pick, want] of [['1', home, 'H'], ['X', L.draw, 'D'], ['2', away, 'A']] as const) {
+    sel.push({ id: `result.${k}`, family: 'result', market: L.result, pick, needs: G, test: (s, i) => result(s.gh[i], s.ga[i]) === want });
   }
-  for (const [k, pick, ok] of [['1X', `${home} sau egal`, ['H', 'D']], ['X2', `${away} sau egal`, ['A', 'D']], ['12', 'Fără egal', ['H', 'A']]] as const) {
-    sel.push({ id: `dc.${k}`, family: 'dc', market: 'Șansă dublă', pick, needs: G, test: (s, i) => (ok as readonly string[]).includes(result(s.gh[i], s.ga[i])) });
+  for (const [k, pick, ok] of [['1X', L.orDraw(home), ['H', 'D']], ['X2', L.orDraw(away), ['A', 'D']], ['12', L.noDraw, ['H', 'A']]] as const) {
+    sel.push({ id: `dc.${k}`, family: 'dc', market: L.dc, pick, needs: G, test: (s, i) => (ok as readonly string[]).includes(result(s.gh[i], s.ga[i])) });
   }
 
   // Goals
-  sel.push(...lines('goals', 'goals', 'Total goluri', G, [0.5, 1.5, 2.5, 3.5, 4.5], (s, i) => goals(s, i, 'T')));
-  sel.push(...lines('goals.home', 'goals.home', `Goluri ${home}`, G, [0.5, 1.5, 2.5], (s, i) => goals(s, i, 'H')));
-  sel.push(...lines('goals.away', 'goals.away', `Goluri ${away}`, G, [0.5, 1.5, 2.5], (s, i) => goals(s, i, 'A')));
-  sel.push({ id: 'btts.yes', family: 'btts', market: 'Ambele echipe marchează', pick: 'Da', needs: G, test: (s, i) => s.gh[i] > 0 && s.ga[i] > 0 });
-  sel.push({ id: 'btts.no', family: 'btts', market: 'Ambele echipe marchează', pick: 'Nu', needs: G, test: (s, i) => !(s.gh[i] > 0 && s.ga[i] > 0) });
-  sel.push(...lines('goals.h1', 'goals.h1', 'Goluri repriza 1', G, [0.5, 1.5], (s, i) => goals(s, i, 'T', 1)));
-  sel.push(...lines('goals.h2', 'goals.h2', 'Goluri repriza 2', G, [0.5, 1.5], (s, i) => goals(s, i, 'T', 2)));
-  for (const [k, pick, want] of [['1', home, 'H'], ['X', 'Egal', 'D'], ['2', away, 'A']] as const) {
-    sel.push({ id: `ht.${k}`, family: 'ht', market: 'Rezultat la pauză', pick, needs: G,
+  sel.push(...lines('goals', 'goals', L.goals, G, [0.5, 1.5, 2.5, 3.5, 4.5], (s, i) => goals(s, i, 'T'), L));
+  sel.push(...lines('goals.home', 'goals.home', L.teamGoals(home), G, [0.5, 1.5, 2.5], (s, i) => goals(s, i, 'H'), L));
+  sel.push(...lines('goals.away', 'goals.away', L.teamGoals(away), G, [0.5, 1.5, 2.5], (s, i) => goals(s, i, 'A'), L));
+  sel.push({ id: 'btts.yes', family: 'btts', market: L.btts, pick: L.yes, needs: G, test: (s, i) => s.gh[i] > 0 && s.ga[i] > 0 });
+  sel.push({ id: 'btts.no', family: 'btts', market: L.btts, pick: L.no, needs: G, test: (s, i) => !(s.gh[i] > 0 && s.ga[i] > 0) });
+  sel.push(...lines('goals.h1', 'goals.h1', L.h1, G, [0.5, 1.5], (s, i) => goals(s, i, 'T', 1), L));
+  sel.push(...lines('goals.h2', 'goals.h2', L.h2, G, [0.5, 1.5], (s, i) => goals(s, i, 'T', 2), L));
+  for (const [k, pick, want] of [['1', home, 'H'], ['X', L.draw, 'D'], ['2', away, 'A']] as const) {
+    sel.push({ id: `ht.${k}`, family: 'ht', market: L.ht, pick, needs: G,
       test: (s, i) => result(goals(s, i, 'H', 1), goals(s, i, 'A', 1)) === want });
   }
   for (const line of [-1.5, 1.5]) {
-    sel.push({ id: `hcp.home.${line}`, family: 'hcp', market: 'Handicap goluri', pick: `${home} ${line > 0 ? '+' : ''}${line}`, needs: G,
+    sel.push({ id: `hcp.home.${line}`, family: 'hcp', market: L.hcp, pick: `${home} ${line > 0 ? '+' : ''}${line}`, needs: G,
       test: (s, i) => s.gh[i] - s.ga[i] + line > 0 });
-    sel.push({ id: `hcp.away.${line}`, family: 'hcp', market: 'Handicap goluri', pick: `${away} ${line > 0 ? '+' : ''}${line}`, needs: G,
+    sel.push({ id: `hcp.away.${line}`, family: 'hcp', market: L.hcp, pick: `${away} ${line > 0 ? '+' : ''}${line}`, needs: G,
       test: (s, i) => s.ga[i] - s.gh[i] + line > 0 });
   }
 
   // Corners, cards, shots, shots on target (leagues with stat models only)
   const stat = (key: StatKey, label: string, total: number[], team: number[]) => {
-    sel.push(...lines(`${key}`, key, `Total ${label}`, [key], total, (s, i) => count(s, i, key, 'T')));
-    sel.push(...lines(`${key}.home`, `${key}.home`, `${cap(label)} ${home}`, [key], team, (s, i) => count(s, i, key, 'H')));
-    sel.push(...lines(`${key}.away`, `${key}.away`, `${cap(label)} ${away}`, [key], team, (s, i) => count(s, i, key, 'A')));
+    sel.push(...lines(`${key}`, key, L.total(label), [key], total, (s, i) => count(s, i, key, 'T'), L));
+    sel.push(...lines(`${key}.home`, `${key}.home`, L.team(label, home), [key], team, (s, i) => count(s, i, key, 'H'), L));
+    sel.push(...lines(`${key}.away`, `${key}.away`, L.team(label, away), [key], team, (s, i) => count(s, i, key, 'A'), L));
   };
-  stat('corners', 'cornere', [6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5], [2.5, 3.5, 4.5, 5.5, 6.5]);
-  stat('cards', 'cartonașe', [1.5, 2.5, 3.5, 4.5, 5.5, 6.5], [0.5, 1.5, 2.5, 3.5]);
-  stat('sot', 'șuturi pe poartă', [5.5, 6.5, 7.5, 8.5, 9.5, 10.5], [2.5, 3.5, 4.5, 5.5]);
-  stat('shots', 'șuturi', [18.5, 20.5, 22.5, 24.5, 26.5, 28.5], [8.5, 10.5, 12.5, 14.5]);
+  stat('corners', L.corners, [6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5], [2.5, 3.5, 4.5, 5.5, 6.5]);
+  stat('cards', L.cards, [1.5, 2.5, 3.5, 4.5, 5.5, 6.5], [0.5, 1.5, 2.5, 3.5]);
+  stat('sot', L.sot, [5.5, 6.5, 7.5, 8.5, 9.5, 10.5], [2.5, 3.5, 4.5, 5.5]);
+  stat('shots', L.shots, [18.5, 20.5, 22.5, 24.5, 26.5, 28.5], [8.5, 10.5, 12.5, 14.5]);
   return sel;
 }
