@@ -2,6 +2,7 @@
 import { TypeSafeClient, Questions, EntryType, APIError } from '@typesafe-ai/sdk';
 import { env, paths, settings } from '../../config/config';
 import { FatalPipelineError } from '../news/newsAgent';
+import { record } from '../../utils/costMeter';
 
 /**
  * TypeSafe's Jev decision model (System One API, https://docs.typesafe.ai/api.md):
@@ -23,6 +24,7 @@ export async function evaluate(state: EntryType, questions: Questions): Promise<
   }
   try {
     const res = await client.systemOne({ state, questions });
+    record({ jevCalls: 1, jevIn: res.usage?.input_tokens ?? 0 });
     return { model: res.model, answers: res.answers as any, usage: { ...res.usage } };
   } catch (err: any) {
     // Bad key or exhausted credits fail every later call too; a per-match fallback would

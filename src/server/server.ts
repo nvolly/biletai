@@ -9,7 +9,8 @@ import { buildModelBank, ModelBank } from '../stages/poisson/modelBank';
 import { LEAGUES } from '../stages/poisson/leagues';
 import { asBetType, generate, GenerateRequest, GenerationResult } from '../engine/generate';
 import { FatalPipelineError } from '../stages/news/newsAgent';
-import { canGenerate, charge, createUser, findByKey, User } from './accounts';
+import { activePlan, canGenerate, charge, createUser, findByKey, planLeft, User } from './accounts';
+import { logCost, newUsage, withUsage } from '../utils/costMeter';
 import { settleAll, TRACK_FILE } from '../engine/settle';
 import { askAboutTicket, parseRequest } from '../stages/news/assistant';
 import { asLang, MSG } from '../i18n';
@@ -19,7 +20,8 @@ import { asLang, MSG } from '../i18n';
  * the apps only send parameters and read results, so no key ever ships to a customer.
  *
  *   GET  /v1/health                  status, leagues ready
- *   GET  /v1/me                      the caller's free / paid generations, plans
+ *   GET  /demo                       (public) a real settled ticket + the plans, for visitors
+ *   GET  /v1/me                      the caller's free / plan / top-up generations, plans
  *   GET  /v1/leagues                 leagues the models cover
  *   POST /v1/generate                start a generation (betType simple | combo) -> { jobId }
  *   GET  /v1/jobs/:id                progress log and, when done, the tickets
@@ -64,10 +66,12 @@ async function pump() {
   busy = true;
   const job = queue.shift()!;
   job.status = 'running';
+  const used = newUsage();
   try {
-    job.result = await generate(bank, job.request, (l) => job.log.push(l));
+    job.result = await withUsage(used, () => generate(bank!, job.request, (l) => job.log.push(l)));
     if (job.result.found > 0) {
-      charge(job.userId);
+      const paid = charge(job.userId);
+      job.result.questionsAllowed = paid?.questions ?? settings.server.freeQuestions;
       fs.writeFileSync(path.join(historyDir(job.userId), `${job.id}.json`), JSON.stringify(job.result));
     }
     job.status = 'done';
@@ -77,14 +81,42 @@ async function pump() {
     job.error = e instanceof FatalPipelineError ? MSG[job.request.lang ?? 'ro'].aiUnavailable : (e?.message ?? String(e));
     logger.error(`job ${job.id} failed: ${e?.message ?? e}`);
   } finally {
+    // Failed runs cost money too, so every run is logged.
+    logCost('generation', job.userId, used, { ref: job.id, matches: job.result?.found ?? 0 });
     busy = false;
     setTimeout(() => jobs.delete(job.id), 6 * 3600_000).unref();
     pump();
   }
 }
 
+// ---- demo: a real BiletAI ticket anyone can see before signing in ----
+let demo: { at: number; g: GenerationResult | null } | null = null;
+/**
+ * The newest AI generation whose tickets are all settled (so the scoreboard shows real
+ * results), else the newest with any result, else the newest. Chat and id are dropped, so
+ * nothing personal is shown and the demo can't be used to ask questions.
+ */
+function demoGeneration(): GenerationResult | null {
+  if (demo && Date.now() - demo.at < 10 * 60_000) return demo.g;
+  const root = path.join(paths.data, 'generations');
+  const all: GenerationResult[] = [];
+  if (fs.existsSync(root)) for (const u of fs.readdirSync(root)) for (const f of fs.readdirSync(path.join(root, u))) {
+    if (!f.endsWith('.json')) continue;
+    try { const g = JSON.parse(fs.readFileSync(path.join(root, u, f), 'utf8')) as GenerationResult; if (g.aiUsed && g.tickets.length) all.push(g); } catch {}
+  }
+  all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const settled = (g: GenerationResult) => g.tickets.every((tk) => tk.status);
+  const some = (g: GenerationResult) => g.tickets.some((tk) => tk.matches.some((m) => m.result));
+  const pick = all.find(settled) ?? all.find(some) ?? all[0] ?? null;
+  const g = pick ? { ...pick, chat: undefined, questionsAllowed: undefined } : null;
+  demo = { at: Date.now(), g };
+  return g;
+}
+
+const publicPlans = () => settings.plans.map(({ id, name, period, priceRon, generations, questions, featured }) => ({ id, name, period, priceRon, generations, questions, featured }));
+
 // ---- assistant limits: each call costs an AI request, so they're capped ----
-const ASK_PER_GENERATION = 10;
+const ASK_PER_GENERATION = 10;   // generations made before plans existed
 const DAILY = { parse: 40, ask: 60 };
 const usage = new Map<string, { day: string; n: number }>();
 /** Count one use of `kind` today for the user; false once the daily cap is reached. */
@@ -123,7 +155,13 @@ function auth(req: http.IncomingMessage): User | null {
   return findByKey(h.startsWith('Bearer ') ? h.slice(7) : undefined);
 }
 
-const publicUser = (u: User) => ({ email: u.email, freeLeft: u.freeLeft, credits: u.credits, used: u.used });
+const publicUser = (u: User) => {
+  const p = activePlan(u);
+  return {
+    email: u.email, freeLeft: u.freeLeft, credits: u.credits, used: u.used,
+    plan: p ? { id: p.id, name: p.def.name, left: planLeft(u), generations: p.def.generations, questions: p.def.questions, until: p.until } : null,
+  };
+};
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
@@ -136,6 +174,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(path.join(paths.client, 'index.html')));
     }
+    // Public, before sign-in: the demo ticket and the plans, so a visitor sees what they'd get.
+    if (req.method === 'GET' && p === '/demo') return send(res, 200, { generation: demoGeneration(), plans: publicPlans(), freeGenerations: settings.server.freeGenerations });
     if (req.method === 'GET' && p === '/v1/health') {
       return send(res, 200, { ok: true, ready: !!bank, leagues: bank?.leagues.size ?? 0, ai: settings.ai.enabled });
     }
@@ -152,9 +192,9 @@ const server = http.createServer(async (req, res) => {
     const user = auth(req);
     if (p.startsWith('/v1/') && !user) return send(res, 401, { error: T.badKey });
 
-    if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: settings.plans, limits: settings.tickets });
+    if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: publicPlans(), limits: settings.tickets });
     if (req.method === 'POST' && p === '/v1/generate') {
-      if (!canGenerate(user!)) return send(res, 402, { error: T.noCredits, plans: settings.plans });
+      if (!canGenerate(user!)) return send(res, 402, { error: T.noCredits, plans: publicPlans() });
       if ([...jobs.values()].some((j) => j.userId === user!.id && (j.status === 'queued' || j.status === 'running'))) {
         return send(res, 409, { error: T.busy });
       }
@@ -188,7 +228,10 @@ const server = http.createServer(async (req, res) => {
       if (!bank) return send(res, 503, { error: T.aiUnavailable });
       if (!useToday(user!.id, 'parse')) return send(res, 429, { error: T.dailyLimit });
       const leagues = LEAGUES.filter((l) => bank!.leagues.has(l.code));
-      const parsed = await parseRequest(text, leagues).catch((e) => { if (e instanceof FatalPipelineError) return 'down' as const; throw e; });
+      const used = newUsage();
+      const parsed = await withUsage(used, () => parseRequest(text, leagues))
+        .catch((e) => { if (e instanceof FatalPipelineError) return 'down' as const; throw e; })
+        .finally(() => logCost('parse', user!.id, used));
       if (parsed === 'down') return send(res, 503, { error: T.aiUnavailable });
       if (!parsed) return send(res, 422, { error: T.notUnderstood });
       return send(res, 200, parsed);
@@ -202,18 +245,20 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(file)) return send(res, 404, { error: T.notFound });
       const g = JSON.parse(fs.readFileSync(file, 'utf8')) as GenerationResult;
       const chat = g.chat ?? [];
-      if (chat.length >= ASK_PER_GENERATION) return send(res, 429, { error: T.askLimit(ASK_PER_GENERATION) });
+      const allowed = g.questionsAllowed ?? ASK_PER_GENERATION;
+      if (chat.length >= allowed) return send(res, 429, { error: T.askLimit(allowed) });
       if (!useToday(user!.id, 'ask')) return send(res, 429, { error: T.dailyLimit });
       let answer: string;
-      try { answer = await askAboutTicket(g, chat, question, asLang(b.lang ?? req.headers['x-lang'])); } catch (e: any) {
+      const used = newUsage();
+      try { answer = await withUsage(used, () => askAboutTicket(g, chat, question, asLang(b.lang ?? req.headers['x-lang']))); } catch (e: any) {
         logger.warn(`ask failed: ${e?.message ?? e}`);
         return send(res, 503, { error: T.aiUnavailable });
-      }
+      } finally { logCost('ask', user!.id, used, { ref: id }); }
       // Re-read before writing: the results tracker may have updated the file meanwhile.
       const fresh = JSON.parse(fs.readFileSync(file, 'utf8')) as GenerationResult;
       fresh.chat = [...(fresh.chat ?? []), { q: question, a: answer, at: new Date().toISOString() }];
       fs.writeFileSync(file, JSON.stringify(fresh));
-      return send(res, 200, { answer, left: ASK_PER_GENERATION - fresh.chat.length });
+      return send(res, 200, { answer, left: allowed - fresh.chat.length });
     }
     if (req.method === 'GET' && p === '/v1/track-record') {
       return send(res, 200, fs.existsSync(TRACK_FILE()) ? JSON.parse(fs.readFileSync(TRACK_FILE(), 'utf8')) : null);

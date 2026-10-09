@@ -45,9 +45,24 @@ ai:
 
 server:
   port: 8787
-  freeGenerations: 3
+  freeGenerations: 2 # then the plans popup
+  freeQuestions: 3 # "ask about the ticket" questions per free generation
 
-# Placeholder plans — prices to be decided (and legal check done) before launch.
+# Plans (owner, 2026-10-09). Prices include VAT. No payments until the ONJN answer and the
+# lawyer's review: until then plans are assigned with `npm run user -- plan <email> <id>`.
+# Sized so even a user who spends the whole plan with no news-cache hits stays profitable
+# at a pessimistic 0.50 lei per generation (see the cost meter: npm run user -- costs).
 plans:
-  - { id: p10, name: '10 generări', generations: 10, priceRon: 29 }
-  - { id: p50, name: '50 generări', generations: 50, priceRon: 99 }
+  - { id: start, name: Start, period: month, priceRon: 29, generations: 15, questions: 3 }
+  - { id: pro, name: Pro, period: month, priceRon: 59, generations: 40, questions: 5, featured: true }
+  - { id: max, name: Max, period: month, priceRon: 99, generations: 80, questions: 10 }
+  - { id: topup10, name: '+10 generări', period: once, priceRon: 25, generations: 10, questions: 3 }
+
+# Cost meter prices in USD (DeepSeek peak rates and Jev list price, checked 2026-10-09).
+costs:
+  deepseekInputPerM: 0.3
+  deepseekCachedInputPerM: 0.006
+  deepseekOutputPerM: 1.2
+  webSearchEach: 0
+  jevInputPerM: 0.042
+  usdToRon: 4.5

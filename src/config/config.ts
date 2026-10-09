@@ -66,7 +66,24 @@ const newsSchema = z.object({
   cacheHours: z.number().positive().default(36),
 });
 
-const planSchema = z.object({ id: z.string(), name: z.string(), generations: z.number().int().positive(), priceRon: z.number().nonnegative() });
+// A monthly plan renews its generations every month; a "once" pack adds generations that
+// never expire. `questions` = "ask about the ticket" questions per generation it pays for.
+const planSchema = z.object({
+  id: z.string(), name: z.string(), generations: z.number().int().positive(), priceRon: z.number().nonnegative(),
+  period: z.enum(['month', 'once']).default('month'), questions: z.number().int().min(0).max(20).default(5),
+  featured: z.boolean().default(false),
+});
+
+// Prices in USD for the cost meter (utils/costMeter.ts). Defaults are DeepSeek's PEAK rates for
+// deepseek-flash and TypeSafe's Jev list price (checked 2026-10-09), so estimates err high.
+const costsSchema = z.object({
+  deepseekInputPerM: z.number().min(0).default(0.3),
+  deepseekCachedInputPerM: z.number().min(0).default(0.006),
+  deepseekOutputPerM: z.number().min(0).default(1.2),
+  webSearchEach: z.number().min(0).default(0),
+  jevInputPerM: z.number().min(0).default(0.042),
+  usdToRon: z.number().positive().default(4.5),
+});
 
 const settingsSchema = z.object({
   builder: builderSchema.default({ minLegs: 2, maxLegs: 4, minOdds: 1.25, maxOdds: 2, legMinOdds: 1.05, maxCandidateLegs: 40, beamWidth: 8 }),
@@ -81,9 +98,11 @@ const settingsSchema = z.object({
   ai: z.object({ enabled: z.boolean().default(true), parallel: z.number().int().min(1).max(16).default(6) }).default({ enabled: true, parallel: 6 }),
   server: z.object({
     port: z.number().int().positive().default(8787),
-    freeGenerations: z.number().int().nonnegative().default(3),
-  }).default({ port: 8787, freeGenerations: 3 }),
+    freeGenerations: z.number().int().nonnegative().default(2),
+    freeQuestions: z.number().int().nonnegative().default(3),   // per free generation
+  }).default({ port: 8787, freeGenerations: 2, freeQuestions: 3 }),
   plans: z.array(planSchema).default([]),
+  costs: costsSchema.default({ deepseekInputPerM: 0.3, deepseekCachedInputPerM: 0.006, deepseekOutputPerM: 1.2, webSearchEach: 0, jevInputPerM: 0.042, usdToRon: 4.5 }),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

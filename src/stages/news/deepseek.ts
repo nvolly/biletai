@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { env } from '../../config/config';
+import { record } from '../../utils/costMeter';
 
 /**
  * Minimal DeepSeek client for the news stage. It calls DeepSeek's Messages endpoint — the one
@@ -15,7 +16,11 @@ export interface Block {
   content?: unknown;       // web_search_tool_result: [{ url, title, ... }] or an error object
 }
 export interface Message { role: 'user' | 'assistant'; content: string | Block[] }
-export interface Reply { content: Block[]; stop_reason: string }
+export interface Reply {
+  content: Block[];
+  stop_reason: string;
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; server_tool_use?: { web_search_requests?: number } };
+}
 
 export class DeepSeekError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -38,5 +43,11 @@ export async function createMessage(body: {
     const msg = res.data?.error?.message ?? JSON.stringify(res.data ?? '').slice(0, 300);
     throw new DeepSeekError(res.status, `HTTP ${res.status}: ${msg}`);
   }
-  return res.data as Reply;
+  const reply = res.data as Reply;
+  const u = reply.usage ?? {};
+  record({
+    deepseekCalls: 1, deepseekIn: u.input_tokens ?? 0, deepseekCachedIn: u.cache_read_input_tokens ?? 0,
+    deepseekOut: u.output_tokens ?? 0, webSearches: u.server_tool_use?.web_search_requests ?? 0,
+  });
+  return reply;
 }
