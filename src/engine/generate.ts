@@ -11,6 +11,7 @@ import { buildBest, candidates, Builder, BuilderOptions, Leg } from './builder';
 import { catalogue } from './catalogue';
 import { Fixture, FixtureSource, footballDataFixtures } from './fixtures';
 import { Lang, MSG, reason } from '../i18n';
+import type { MatchResult } from './settle';
 
 /**
  * One generation: N tickets of M matches. Two bet types:
@@ -52,9 +53,10 @@ export interface TicketMatch {
   fairOdds: number;
   explanation?: string;
   jev?: { risk: number; infoLow: number; consistency: number | null };
+  result?: MatchResult;      // set by the results tracker once the match is played
 }
 
-export interface Ticket { index: number; matches: TicketMatch[]; probability: number; fairOdds: number }
+export interface Ticket { index: number; matches: TicketMatch[]; probability: number; fairOdds: number; status?: 'won' | 'lost' }
 
 export interface GenerationResult {
   createdAt: string;

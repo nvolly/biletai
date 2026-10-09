@@ -10,6 +10,7 @@ import { LEAGUES } from '../stages/poisson/leagues';
 import { asBetType, generate, GenerateRequest, GenerationResult } from '../engine/generate';
 import { FatalPipelineError } from '../stages/news/newsAgent';
 import { canGenerate, charge, createUser, findByKey, User } from './accounts';
+import { settleAll, TRACK_FILE } from '../engine/settle';
 import { asLang, MSG } from '../i18n';
 
 /**
@@ -21,7 +22,8 @@ import { asLang, MSG } from '../i18n';
  *   GET  /v1/leagues                 leagues the models cover
  *   POST /v1/generate                start a generation (betType simple | combo) -> { jobId }
  *   GET  /v1/jobs/:id                progress log and, when done, the tickets
- *   GET  /v1/history                 the caller's recent generations
+ *   GET  /v1/history                 the caller's recent generations (settled ones carry results)
+ *   GET  /v1/track-record            how BiletAI's settled picks actually did
  *   POST /admin/users                (X-Admin-Token) create a user -> access key
  *
  * Auth: "Authorization: Bearer <access key>". A generation is charged only when it
@@ -29,10 +31,12 @@ import { asLang, MSG } from '../i18n';
  */
 const PORT = env.PORT ?? settings.server.port;
 
-// ---- model bank: built at start, refreshed every 12h ----
+// ---- model bank: built at start, refreshed every 12h; each refresh brings new results,
+// so the results tracker settles past picks right after ----
 let bank: ModelBank | null = null;
 async function refreshBank() {
-  try { bank = await buildModelBank(); } catch (e: any) { logger.error(`model bank failed: ${e?.message ?? e}`); }
+  try { bank = await buildModelBank(); } catch (e: any) { logger.error(`model bank failed: ${e?.message ?? e}`); return; }
+  try { settleAll(bank); } catch (e: any) { logger.error(`results tracker failed: ${e?.message ?? e}`); }
 }
 refreshBank();
 setInterval(refreshBank, 12 * 3600_000).unref();
@@ -159,6 +163,9 @@ const server = http.createServer(async (req, res) => {
       if (!job || job.userId !== user!.id) return send(res, 404, { error: T.notFound });
       // Re-read the user so the remaining generations reflect a charge made by this job.
       return send(res, 200, { id: job.id, status: job.status, log: job.log, result: job.result, error: job.error, me: publicUser(auth(req) ?? user!) });
+    }
+    if (req.method === 'GET' && p === '/v1/track-record') {
+      return send(res, 200, fs.existsSync(TRACK_FILE()) ? JSON.parse(fs.readFileSync(TRACK_FILE(), 'utf8')) : null);
     }
     if (req.method === 'GET' && p === '/v1/history') {
       const dir = historyDir(user!.id);
