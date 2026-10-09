@@ -35,9 +35,9 @@ ticket gets a combination of 2–4 selections (a "builder"), with its **probabil
   (`plans` in `config/settings.yaml`, placeholders: 10 generări = 29 lei, 50 = 99 lei).
 - **Owner:** Vali. Prefers Romanian in conversation, fast runs and low API costs.
 
-It grew out of the owner's private tool (`../superbet-betting-bot`), which bets on his own
-account. **That tool is not the product and nothing from it that touches a bookmaker may come
-here.** BiletAI took only the statistical engine and the AI stages.
+It grew out of the owner's separate private tool. **That tool is not the product: BiletAI has
+no link to it and nothing that touches a bookmaker may come here.** BiletAI took only the
+statistical engine and the AI stages.
 
 ## Legal position (decided 2026-10-08/09; not legal advice, pending confirmation)
 
