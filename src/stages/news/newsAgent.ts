@@ -41,13 +41,13 @@ export interface NewsRequest {
   kickoff: string;
 }
 
-const newsModel = () => env.NEWS_MODEL ?? 'deepseek-flash';
+export const newsModel = () => env.NEWS_MODEL ?? 'deepseek-flash';
 
 /**
  * A schema-checked JSON answer, or null when it cannot be produced. DeepSeek has no
  * structured-output mode, so the schema goes in the prompt and the reply is validated.
  */
-async function structured<T extends z.ZodType>(schema: T, prompt: string, maxTokens: number): Promise<z.infer<T> | null> {
+export async function structured<T extends z.ZodType>(schema: T, prompt: string, maxTokens: number): Promise<z.infer<T> | null> {
   const jsonPrompt = `${prompt}\n\nReply with ONLY a JSON object, no prose and no code fences, matching this JSON Schema:\n` +
     JSON.stringify(z.toJSONSchema(schema));
   const messages: Message[] = [{ role: 'user', content: jsonPrompt }];
@@ -139,7 +139,7 @@ export class FatalPipelineError extends Error {}
  * and Jev then drops each match as "no information" (2026-10-05: 189 of 276 matches lost to
  * an exhausted credit balance before anyone noticed). Stop the run instead.
  */
-function isAccountError(err: any): boolean {
+export function isAccountError(err: any): boolean {
   if (!(err instanceof DeepSeekError)) return false;
   // 401/403: bad key; 402: DeepSeek's "Insufficient Balance".
   if ([401, 402, 403].includes(err.status)) return true;

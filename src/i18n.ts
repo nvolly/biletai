@@ -45,6 +45,10 @@ export const MSG = {
     minOne: 'Numărul de bilete și de meciuri trebuie să fie cel puțin 1.',
     aiUnavailable: 'Serviciul de analiză nu e disponibil momentan. Nu ți s-a consumat nicio generare.',
     notFound: 'Nu a fost găsit.',
+    notUnderstood: 'Nu am înțeles cererea. Încearcă altfel sau completează setările de mână.',
+    askLimit: (n: number) => `Ai folosit toate cele ${n} întrebări pentru această generare.`,
+    dailyLimit: 'Ai atins limita zilnică pentru asistent. Încearcă din nou mâine.',
+    tooLong: 'Mesajul e prea lung.',
   },
   en: {
     upcoming: (n: number, h: number, need: number) => `${n} matches in the next ${h} hours; ${need} needed`,
@@ -62,6 +66,10 @@ export const MSG = {
     minOne: 'Tickets and matches must be at least 1.',
     aiUnavailable: 'The analysis service is temporarily unavailable. You were not charged.',
     notFound: 'Not found.',
+    notUnderstood: "I didn't understand that request. Try rephrasing it, or fill in the settings by hand.",
+    askLimit: (n: number) => `You've used all ${n} questions for this generation.`,
+    dailyLimit: "You've reached today's assistant limit. Try again tomorrow.",
+    tooLong: 'That message is too long.',
   },
 };
 

@@ -11,6 +11,7 @@ import { asBetType, generate, GenerateRequest, GenerationResult } from '../engin
 import { FatalPipelineError } from '../stages/news/newsAgent';
 import { canGenerate, charge, createUser, findByKey, User } from './accounts';
 import { settleAll, TRACK_FILE } from '../engine/settle';
+import { askAboutTicket, parseRequest } from '../stages/news/assistant';
 import { asLang, MSG } from '../i18n';
 
 /**
@@ -24,6 +25,8 @@ import { asLang, MSG } from '../i18n';
  *   GET  /v1/jobs/:id                progress log and, when done, the tickets
  *   GET  /v1/history                 the caller's recent generations (settled ones carry results)
  *   GET  /v1/track-record            how BiletAI's settled picks actually did
+ *   POST /v1/parse                   { text } -> settings for the form (request box)
+ *   POST /v1/ask                     { generationId, question } -> { answer, left } (ticket chat)
  *   POST /admin/users                (X-Admin-Token) create a user -> access key
  *
  * Auth: "Authorization: Bearer <access key>". A generation is charged only when it
@@ -78,6 +81,20 @@ async function pump() {
     setTimeout(() => jobs.delete(job.id), 6 * 3600_000).unref();
     pump();
   }
+}
+
+// ---- assistant limits: each call costs an AI request, so they're capped ----
+const ASK_PER_GENERATION = 10;
+const DAILY = { parse: 40, ask: 60 };
+const usage = new Map<string, { day: string; n: number }>();
+/** Count one use of `kind` today for the user; false once the daily cap is reached. */
+function useToday(userId: string, kind: keyof typeof DAILY): boolean {
+  const day = new Date().toISOString().slice(0, 10), k = `${kind}:${userId}`;
+  const u = usage.get(k);
+  if (!u || u.day !== day) { usage.set(k, { day, n: 1 }); return true; }
+  if (u.n >= DAILY[kind]) return false;
+  u.n++;
+  return true;
 }
 
 // ---- HTTP ----
@@ -163,6 +180,40 @@ const server = http.createServer(async (req, res) => {
       if (!job || job.userId !== user!.id) return send(res, 404, { error: T.notFound });
       // Re-read the user so the remaining generations reflect a charge made by this job.
       return send(res, 200, { id: job.id, status: job.status, log: job.log, result: job.result, error: job.error, me: publicUser(auth(req) ?? user!) });
+    }
+    if (req.method === 'POST' && p === '/v1/parse') {
+      const b = await body(req);
+      const text = String(b.text ?? '').trim();
+      if (!text || text.length > 300) return send(res, 400, { error: T.tooLong });
+      if (!bank) return send(res, 503, { error: T.aiUnavailable });
+      if (!useToday(user!.id, 'parse')) return send(res, 429, { error: T.dailyLimit });
+      const leagues = LEAGUES.filter((l) => bank!.leagues.has(l.code));
+      const parsed = await parseRequest(text, leagues).catch((e) => { if (e instanceof FatalPipelineError) return 'down' as const; throw e; });
+      if (parsed === 'down') return send(res, 503, { error: T.aiUnavailable });
+      if (!parsed) return send(res, 422, { error: T.notUnderstood });
+      return send(res, 200, parsed);
+    }
+    if (req.method === 'POST' && p === '/v1/ask') {
+      const b = await body(req);
+      const id = String(b.generationId ?? ''), question = String(b.question ?? '').trim();
+      if (!/^[\w-]{6,40}$/.test(id)) return send(res, 404, { error: T.notFound });
+      if (!question || question.length > 500) return send(res, 400, { error: T.tooLong });
+      const file = path.join(historyDir(user!.id), `${id}.json`);
+      if (!fs.existsSync(file)) return send(res, 404, { error: T.notFound });
+      const g = JSON.parse(fs.readFileSync(file, 'utf8')) as GenerationResult;
+      const chat = g.chat ?? [];
+      if (chat.length >= ASK_PER_GENERATION) return send(res, 429, { error: T.askLimit(ASK_PER_GENERATION) });
+      if (!useToday(user!.id, 'ask')) return send(res, 429, { error: T.dailyLimit });
+      let answer: string;
+      try { answer = await askAboutTicket(g, chat, question, asLang(b.lang ?? req.headers['x-lang'])); } catch (e: any) {
+        logger.warn(`ask failed: ${e?.message ?? e}`);
+        return send(res, 503, { error: T.aiUnavailable });
+      }
+      // Re-read before writing: the results tracker may have updated the file meanwhile.
+      const fresh = JSON.parse(fs.readFileSync(file, 'utf8')) as GenerationResult;
+      fresh.chat = [...(fresh.chat ?? []), { q: question, a: answer, at: new Date().toISOString() }];
+      fs.writeFileSync(file, JSON.stringify(fresh));
+      return send(res, 200, { answer, left: ASK_PER_GENERATION - fresh.chat.length });
     }
     if (req.method === 'GET' && p === '/v1/track-record') {
       return send(res, 200, fs.existsSync(TRACK_FILE()) ? JSON.parse(fs.readFileSync(TRACK_FILE(), 'utf8')) : null);

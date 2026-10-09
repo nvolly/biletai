@@ -66,6 +66,7 @@ export interface GenerationResult {
   needed: number;
   aiUsed: boolean;
   log: string[];
+  chat?: { q: string; a: string; at: string }[];   // "ask about the ticket" turns
 }
 
 type Log = (line: string) => void;
