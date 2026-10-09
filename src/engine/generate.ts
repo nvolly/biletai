@@ -154,6 +154,10 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
   } else {
     // AI only for matches about to be used, a few at a time, until the tickets are full.
     let next = 0;
+    // Both counters move synchronously, so parallel workers can't race past them: `turn`
+    // spreads attempts over the odds bands, `taken` reserves a ticket slot before the
+    // (paid) explanation so no extra match is accepted.
+    let turn = 0, taken = 0;
     const worker = async () => {
       while (chosen.length < needed && next < prepared.length) {
         const p = prepared[next++];
@@ -165,10 +169,11 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
         };
         const verdict = await filterMatch(state);
         if (!verdict.keep) { say(T.skipped(label, verdict.reasons.map((r) => reason(request.lang, r)).join('; '))); continue; }
-        const bld = pick(p, chosen.length);
+        const bld = pick(p, turn++);
         const check = await checkBuilder(state, bld.legs, bld.probability);
         if (!check.ok) { say(T.skipped(label, T.notFit)); continue; }
-        if (chosen.length >= needed) return;
+        if (taken >= needed) return;
+        taken++;
         const explanation = await explainBuilder({ match: label, news, legs: bld.legs, probability: bld.probability, lang: request.lang });
         chosen.push(toMatch(p, bld, bld.probability * verdict.weight, {
           explanation, jev: { risk: verdict.flags.riskHigh, infoLow: verdict.flags.infoLow, consistency: check.consistency },

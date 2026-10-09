@@ -168,7 +168,7 @@ export async function explainBuilder(input: {
         `(market names are ${input.lang === 'ro' ? 'Romanian' : 'English'})` +
         (input.legs.length === 1 ? ' ' : ', which all have to happen together ') +
         `(model probability ${(input.probability * 100).toFixed(1)}%):\n` +
-        input.legs.map((l) => `- ${l.market}: ${l.pick} (${(l.probability * 100).toFixed(0)}% on its own)`).join('\n') +
+        input.legs.map((l) => `- ${l.market}: ${l.pick}` + (input.legs.length === 1 ? '' : ` (${(l.probability * 100).toFixed(0)}% on its own)`)).join('\n') +
         `\n\nTeam news: ${input.news ? JSON.stringify(input.news) : 'unavailable'}\n\n` +
         `Write 2-3 sentences IN ${language} for a football fan: what has to happen and why the numbers or the news ` +
         `support it. Do not promise any result, do not overstate certainty, and do not invent facts beyond the numbers and the news.`,
