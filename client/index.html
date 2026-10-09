@@ -232,6 +232,8 @@ const T = {
     betType: 'Tip de pariu', simple: 'Simplu', combo: 'Combinat',
     simpleHint: 'o selecție pe meci', comboHint: '2–4 selecții pe același meci',
     total: 'cotă corectă totală', cumulated: 'Cote cumulate',
+    chanceHint: 'Șansa estimată ca toate selecțiile de pe acest meci să iasă, după verificarea riscului de către AI.',
+    legChanceHint: 'Șansa doar pentru această selecție.',
     fillMode: 'Mod completare', image: 'Imagine', addedOne: 'Adăugat',
     fillHint: 'Bifează fiecare selecție pe măsură ce o adaugi în aplicația ta și scrie cota primită, ca s-o compari cu cota corectă.',
     cmpNote: 'Peste cota corectă = un preț mai bun decât estimează modelul. Nu garantează câștigul.',
@@ -273,6 +275,8 @@ const T = {
     betType: 'Bet type', simple: 'Single', combo: 'Combo',
     simpleHint: 'one selection per match', comboHint: '2–4 selections on the same match',
     total: 'total fair odds', cumulated: 'Cumulated odds',
+    chanceHint: 'Estimated chance that every selection on this match comes in, after the AI risk check.',
+    legChanceHint: 'Chance of this selection on its own.',
     fillMode: 'Fill-in mode', image: 'Image', addedOne: 'Added',
     fillHint: 'Tick each selection as you add it in your app, and type the odds you got to compare them with the fair odds.',
     cmpNote: 'Above fair odds = a better price than the model estimates. It does not guarantee a win.',
@@ -557,7 +561,7 @@ function drawCard(tk, type) {
     g.font = font(500, 27); g.fillStyle = '#c9cde2';
     picks.forEach((line, i) => g.fillText(line, P + 26, y + 116 + i * 38));
     g.textAlign = 'right'; g.fillStyle = C.ink; g.font = font(800, 38); g.fillText(m.fairOdds.toFixed(2), W - P - 26, y + 62);
-    g.fillStyle = C.muted; g.font = font(500, 22); g.fillText(pct(m.adjusted), W - P - 26, y + 94); g.textAlign = 'left';
+    g.fillStyle = C.muted; g.font = font(500, 22); g.fillText(`${t().chance} ${pct(m.adjusted)}`, W - P - 26, y + 94); g.textAlign = 'left';
     y += h + 20;
   }
   y += 24;
@@ -608,9 +612,9 @@ function render(result, { animate = false } = {}) {
           <div class="clockCol">${clock(m)}<input type="checkbox" class="chk" title="${t().addedOne}"></div>
           <div><div class="teams">${esc(m.fixture.home)} – ${esc(m.fixture.away)}</div>
             <div class="meta">${esc(country(m.fixture.country))} · ${esc(m.fixture.leagueName)} · ${when(m.fixture.kickoff)}</div></div>
-          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p">${pct(m.adjusted)}</div>
+          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p" title="${t().chanceHint}">${t().chance} ${pct(m.adjusted)}</div>
             <label class="yours">${t().yourOdds}<input type="number" min="1.01" step="0.01" inputmode="decimal"></label><div class="cmp"></div></div>
-          <div class="legs">${m.legs.map((l) => `<span class="leg">${esc(l.market)}: <b>${esc(l.pick)}</b> <em>${pct(l.probability)}</em></span>`).join('')}</div>
+          <div class="legs">${m.legs.map((l) => `<span class="leg">${esc(l.market)}: <b>${esc(l.pick)}</b> <em title="${t().legChanceHint}">${pct(l.probability)}</em></span>`).join('')}</div>
           ${m.explanation ? `<div class="why">${esc(m.explanation)}</div>` : ''}
         </div>`).join('')}
       <div class="yourTotal"></div>
