@@ -39,7 +39,8 @@ npm run app                        # starts the server and opens the desktop UI
 Other commands:
 - `npm run server`: the API server only (port 8787).
 - `npm run generate -- 2 5 [--simple] [--no-ai]`: generate from the terminal.
-- `npm run user -- list | credit <email> <n> | key <email>`: user admin on the server.
+- `npm run user -- list | credit <email> <n> | plan <email> <id> [months] | key <email>`: user admin on the server.
+- `npm run user -- costs`: what generations, questions and requests really cost, and each plan's margin.
 - `npm test`: runs the tests.
 
 ## Desktop app (Windows)
@@ -62,6 +63,7 @@ All `/v1` calls need `Authorization: Bearer <access key>`.
 
 | Call | What |
 |---|---|
+| `GET /demo` | Public: a real BiletAI ticket (with results once played) and the plans |
 | `GET /v1/health` | Status, number of leagues ready |
 | `GET /v1/me` | Free and paid generations left, plans |
 | `GET /v1/leagues` | Leagues the models cover |

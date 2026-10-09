@@ -38,8 +38,15 @@ plus a short explanation. The ticket's **cotă corectă totală** is the match o
   - **Light theme:** the same design on **white**.
   - It follows the system; the ◐ button toggles it and is remembered.
   - Keep new UI in this style; don't switch to monochrome again.
-- **Money:** free generations first (`server.freeGenerations`, 3), then paid plans
-  (`plans` in `config/settings.yaml`, placeholders: 10 generări = 29 lei, 50 = 99 lei).
+- **Money** (owner, 2026-10-09; prices include VAT, `plans` in `config/settings.yaml`):
+  - A visitor first sees a **demo**: a real BiletAI ticket, with real results once played.
+  - Then **2 free generations** (3 questions each), then the **plans popup**.
+  - Monthly plans: **Start 29 lei** (15 generations, 3 questions per ticket), **Pro 59 lei**
+    (40, 5; recommended), **Max 99 lei** (80, 10). Top-up: **+10 generations = 25 lei**, never
+    expires. No "unlimited" plan.
+  - Paid in this order: free → this month's plan → top-up. Whatever paid sets the ticket's
+    questions.
+  - Until payments are allowed, plans are given with `npm run user -- plan <email> <id>`.
 - **Owner:** Vali. Prefers Romanian in conversation, fast runs and low API costs.
 
 It grew out of the owner's separate private tool. **That tool is not the product: BiletAI has
@@ -153,15 +160,34 @@ Status:
       (today ~2 weeks late), confirmed lineups (re-check tickets ~1h before kickoff), xG.
 - [ ] **Accounts in a real database** (SQLite is enough) instead of `data/users.json`, before
       launch.
+- [ ] **Payments for the plans** (after ONJN + lawyer): Stripe on web/desktop, Google/Apple
+      in-app purchases on mobile. The popup's buttons say "În curând" until then.
+- [ ] **Run generations on a worker thread.** One generation blocks the server for ~15 s of
+      simulation, so other users wait; fine for now, not with many users.
+- [ ] **News research overshoots its search limit:** 49 web searches for 11 matches although
+      `news.maxSearches` is 2 per call. It's most of the cost. Find out why (DeepSeek may not
+      enforce `max_uses`) before trimming.
+- [ ] **Test user** `test@biletai.local` (Pro plan) exists on the dev machine; its tickets
+      feed the demo. Remove it before going live.
 - [ ] **Rebuild the installer** (`npm run desktop:dist`) before sharing it: the copy in
       `desktop/dist/` predates the bet types and the new features.
 
-## Costs (measured on the private tool, 2026-10-07)
+## Costs (measured by the cost meter, 2026-10-09)
 
-- DeepSeek news ≈ **$0.003 per match researched**, after the cost cuts: 2 web searches,
-  thinking off, 36h cache. Jev keeps about 1 match in 3, so a ticket of N matches costs
-  about 3N lookups.
-- Generation time: about **35 s without AI** for 2×5; **~53 s with AI** for 1×3.
+The meter (`utils/costMeter.ts`) logs the real DeepSeek and Jev tokens of every generation,
+question and request to `data/costs.jsonl`; `npm run user -- costs` prints averages and each
+plan's margin. Prices are in `costs` in `settings.yaml`: DeepSeek flash at peak rates ($0.30
+in / $1.20 out per 1M tokens) and Jev ($0.042 per 1M input, output free).
+
+- **5-match ticket, nothing cached: 0.40 lei ($0.089).** 11 matches researched, 27 DeepSeek
+  calls, 20 Jev calls, 36 s.
+- **Same ticket with the news already cached: ~0.02 lei.** The 36h news cache is shared by
+  all users, so the cost per ticket falls as usage grows.
+- **Simplu and Combinat cost the same.** A question costs ~0.007 lei, a request-box use
+  ~0.002 lei.
+- **Jev is almost free** (~$0.0001 a call); DeepSeek's news research is nearly all the cost.
+- Margin per plan with every generation and question used, at the cold cost: Start ~69%,
+  Pro ~58%, Max ~46%, after 21% VAT and a 15% store cut. Real usage is lower, so more is left.
 
 ## Rules for working here
 
@@ -188,6 +214,8 @@ Status:
 | `npm run desktop:dist` | Build the Windows installer into `desktop/dist/` |
 | `npm run generate -- 2 5 [--simple] [--no-ai]` | Generate from the terminal (`--simple` = one selection per match) |
 | `npm run user -- add <email> [credits]` | Create a user and print the access key once (`credit`, `key`, `list` also exist) |
+| `npm run user -- plan <email> <id> [months]` | Give a plan: `start`, `pro`, `max` (monthly) or `topup10` |
+| `npm run user -- costs` | Real cost per generation / question / request, and each plan's margin |
 | `npm test` | Unit tests (models, simulation, builder) |
 
 The owner's test account is `owner@ticketmind.local`, created before the rename and
