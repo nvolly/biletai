@@ -23,9 +23,12 @@ ticket gets a combination of 2–4 selections (a "builder"), with its **probabil
   Add any new user-facing string to `src/i18n.ts` (server) or the `T` dictionary in
   `client/index.html` (app), in both languages. Team names stay as the data source writes
   them. Code, comments and this file stay in English.
-- **Look: black and white only.** White page with black ink, or black page with white ink in
-  dark mode (follows the system; the ◐ button toggles it). No colours: emphasis comes from
-  weight, inverted blocks and borders.
+- **Look: the original BiletAI design** (owner, 2026-10-09, after trying black-and-white and
+  rejecting it): indigo accent `#5b5bf7` with a green highlight `#34d399`.
+  - **Dark theme:** the original deep navy (`#0e1020`).
+  - **Light theme:** the same design on **white**.
+  - It follows the system; the ◐ button toggles it and is remembered.
+  - Keep new UI in this style; don't switch to monochrome again.
 - **Money:** free generations first (`server.freeGenerations`, 3), then paid plans
   (`plans` in `config/settings.yaml`, placeholders: 10 generări = 29 lei, 50 = 99 lei).
 - **Owner:** Vali. Prefers Romanian in conversation, fast runs and low API costs.
