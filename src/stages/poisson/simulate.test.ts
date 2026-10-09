@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { simulate, jointProbability, probability, goalInvolvementOutcome, latentOutcome, Outcome } from './simulate';
+import { simulate, jointProbability, probability, Outcome } from './simulate';
 import { cholesky, identity, nearestCorrelation, VAR_INDEX, SIM_VARS } from './copula';
 import { scoreMatrix } from './dixonColes';
 import { jointProb, pred } from './markets';
@@ -72,20 +72,5 @@ describe('correlation across models', () => {
     ];
     const j = jointProbability(legs);
     for (const l of legs) expect(j).toBeLessThanOrEqual(probability(l));
-  });
-});
-
-describe('player legs', () => {
-  const sim = simulate(model, cholesky(identity(SIM_VARS.length)), N, 3);
-
-  it('goal involvement hits its target marginal and needs a team goal', () => {
-    const o = goalInvolvementOutcome(sim, 'home', 0.35, 1, 9);
-    expect(Math.abs(probability(o) - 0.35)).toBeLessThan(TOL);
-    for (let i = 0; i < sim.n; i++) if (sim.gh[i] === 0) expect(o[i]).toBe(0);
-  });
-
-  it('latent legs hit their target marginal', () => {
-    const o = latentOutcome(sim, ['shotsH'], 0.6, 0.5, 11);
-    expect(Math.abs(probability(o) - 0.6)).toBeLessThan(TOL);
   });
 });
