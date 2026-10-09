@@ -1,0 +1,55 @@
+# TicketMind server settings. Secrets are NOT here: they come from the server environment
+# (.env on the server or the hosting provider's secret settings) — see .env.example.
+
+builder: # one Bet Builder-style combination on ONE match
+  minLegs: 2
+  maxLegs: 4
+  minOdds: 1.25 # fair odds of the whole combination = 1 / P(all selections win)
+  maxOdds: 2.0
+  legMinOdds: 1.05 # skip selections more than ~95% likely
+  maxCandidateLegs: 40
+  beamWidth: 8
+
+tickets:
+  windowHours: 72
+  defaultTickets: 1
+  defaultMatches: 5
+  maxTickets: 5
+  maxMatches: 15
+
+model:
+  seasons: 3
+  decayPerDay: 0.0019 # ~1-year half-life
+  shrinkage: 4
+  simulations: 20000
+  maxStaleDays: 14
+  modelWeight: 0.25 # model vs the market average prices for expected goals (backtest)
+
+jev:
+  model: jev-latest
+  dropIfKeyPlayerMissing: 0.97
+  keyPlayerDownweight: 0.05
+  dropIfRotation: 0.7
+  dropIfLowInfo: 0.6
+  dropIfHighRisk: 0.5
+  riskDownweight: 0.15
+  playerMaxShift: 0.1
+  playerCorrelation: 0.5
+  minSlipConsistency: 0.5
+
+news:
+  maxSearches: 2
+  cacheHours: 36
+
+ai:
+  enabled: true # false = statistical models only (no AI cost)
+  parallel: 6
+
+server:
+  port: 8787
+  freeGenerations: 3
+
+# Placeholder plans — prices to be decided (and legal check done) before launch.
+plans:
+  - { id: p10, name: '10 generations', generations: 10, priceRon: 29 }
+  - { id: p50, name: '50 generations', generations: 50, priceRon: 99 }

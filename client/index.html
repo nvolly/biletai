@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketMind</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b5bf7'/%3E%3Cpath d='M18 22h28M32 22v24' stroke='white' stroke-width='7' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='44' r='5' fill='%2334d399'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f5f6fb; --panel: #ffffff; --ink: #161a2b; --muted: #687089; --line: #e4e7f0; --field: #f8f9fd;
+    --accent: #5b5bf7; --accent-2: #34d399; --accent-ink: #ffffff; --bad: #d23b4a; --warn: #b7791f; --ok: #0f9a6d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e1020; --panel: #171a2e; --ink: #e9ebf6; --muted: #9aa1bd; --line: #262a44; --field: #1e2238; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; }
+  .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; }
+  h1 { font-size: 17px; margin: 0; letter-spacing: .2px; } h1 span { color: var(--accent); }
+  .spacer { flex: 1; }
+  .pill { padding: 4px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--field); border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { background: color-mix(in srgb, var(--accent-2) 18%, transparent); color: var(--ok); border-color: transparent; }
+  main { display: grid; grid-template-columns: minmax(330px, 410px) 1fr; gap: 18px; padding: 18px 22px 28px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 920px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label.f { display: block; font-size: 12px; color: var(--muted); }
+  input, select { font: inherit; color: var(--ink); }
+  label.f input, label.f select { display: block; width: 100%; margin-top: 4px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--field); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow: auto; padding: 2px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; background: var(--field); font-size: 12.5px; user-select: none; }
+  .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); }
+  .btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 10px 16px; border-radius: 10px; font: inherit; font-weight: 650; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); width: 100%; font-size: 15px; padding: 12px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.small { padding: 5px 10px; font-size: 12.5px; }
+  #msg { font-size: 13px; margin-top: 8px; min-height: 18px; } #msg.err { color: var(--bad); } #msg.ok { color: var(--ok); }
+  .progress { height: 6px; border-radius: 999px; background: var(--field); overflow: hidden; margin: 6px 0 10px; }
+  .progress > div { height: 100%; width: 30%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); animation: slide 1.4s infinite ease-in-out; border-radius: 999px; }
+  @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+  #log { font: 12px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--muted); max-height: 150px; overflow: auto; white-space: pre-wrap; }
+  .ticket { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; overflow: hidden; background: var(--panel); }
+  .thead { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent); border-bottom: 1px solid var(--line); }
+  .thead b { font-size: 15px; } .stat { font-size: 12.5px; color: var(--muted); } .stat strong { color: var(--ink); font-size: 14px; }
+  .match { padding: 11px 16px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; }
+  .match:last-child { border-bottom: 0; }
+  .teams { font-weight: 650; } .meta { font-size: 12px; color: var(--muted); }
+  .legs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .leg { font-size: 12.5px; padding: 3px 9px; border-radius: 8px; background: var(--field); border: 1px solid var(--line); }
+  .leg em { font-style: normal; color: var(--muted); }
+  .odds { text-align: right; } .odds .o { font-size: 16px; font-weight: 750; } .odds .p { font-size: 12px; color: var(--muted); }
+  .why { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+  .hist { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .hist:last-child { border-bottom: 0; } .hist:hover { color: var(--accent); }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 0 20px 24px; }
+  .connect { max-width: 440px; margin: 70px auto; }
+  .plans { display: grid; gap: 8px; margin-top: 10px; }
+  .plan { display: flex; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><svg width="20" height="20" viewBox="0 0 64 64"><path d="M14 18h36M32 18v30" stroke="white" stroke-width="8" stroke-linecap="round"/><circle cx="49" cy="46" r="6" fill="#34d399"/></svg></div>
+  <h1>Ticket<span>Mind</span></h1>
+  <span class="hint" style="margin-left:4px">AI football tickets · statistics + news analysis</span>
+  <div class="spacer"></div>
+  <span id="credits" class="pill"></span>
+  <button class="btn small" id="bLogout" style="display:none">Sign out</button>
+</header>
+
+<div id="connect" class="card connect" style="display:none">
+  <h2>Sign in</h2>
+  <label class="f">Access key <input id="key" type="password" placeholder="tm_..." autocomplete="off"></label>
+  <details style="margin-top:8px"><summary class="hint">Server</summary>
+    <label class="f" style="margin-top:6px">Server address <input id="server" placeholder="https://..."></label>
+  </details>
+  <button class="btn primary" id="bConnect" style="margin-top:12px">Sign in</button>
+  <div id="cmsg" class="hint" style="margin-top:8px"></div>
+</div>
+
+<main id="app" style="display:none">
+  <section>
+    <div class="card">
+      <h2>Your tickets</h2>
+      <div class="grid2">
+        <label class="f">Tickets <input id="tickets" type="number" min="1" max="5" value="1"></label>
+        <label class="f">Matches per ticket <input id="matches" type="number" min="1" max="15" value="5"></label>
+        <label class="f">Odds per match from <input id="minOdds" type="number" min="1.05" max="10" step="0.05" value="1.25"></label>
+        <label class="f">to <input id="maxOdds" type="number" min="1.1" max="20" step="0.05" value="2.00"></label>
+        <label class="f">Selections per match (max) <select id="maxLegs"><option>2</option><option>3</option><option selected>4</option><option>5</option></select></label>
+        <label class="f">Matches within <select id="windowHours"><option value="24">24 hours</option><option value="48">2 days</option><option value="72" selected>3 days</option><option value="144">6 days</option></select></label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Leagues <span class="hint" style="text-transform:none;letter-spacing:0">(none selected = all)</span></h2>
+      <div id="leagues" class="chips"></div>
+      <div class="hint" style="margin-top:8px">● = goals, corners, cards and shots · others: goal markets</div>
+    </div>
+    <div class="card">
+      <button class="btn primary" id="bGen">Generate tickets</button>
+      <div id="msg"></div>
+      <div id="plansBox" style="display:none">
+        <div class="hint" style="margin-top:6px">Plans</div>
+        <div class="plans" id="plans"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Recent</h2>
+      <div id="history"><div class="hint">No tickets yet.</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card" id="runCard" style="display:none">
+      <h2>Working</h2>
+      <div class="progress"><div></div></div>
+      <div id="log"></div>
+    </div>
+    <div id="results"><div class="card empty">Choose your settings and press <b>Generate tickets</b>.<br>
+      Each match gets a combination of 2–4 selections with its <b>probability</b> and <b>fair odds</b>.</div></div>
+  </section>
+</main>
+
+<footer>18+ only. TicketMind provides statistical predictions, not guarantees: any match can go either way.
+  Bet only what you can afford to lose. Fair odds = 1 / model probability; compare them with what you are offered.</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }, del: (k) => { try { localStorage.removeItem(k); } catch {} } };
+let SERVER = store.get('tm.server') || (location.protocol.startsWith('http') ? location.origin : 'http://127.0.0.1:8787');
+let KEY = store.get('tm.key') || '';
+
+async function api(path, opts = {}) {
+  const r = await fetch(SERVER + path, { ...opts, headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}`, ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || `HTTP ${r.status}`), { status: r.status, data: j });
+  return j;
+}
+
+function say(t, k) { $('msg').textContent = t; $('msg').className = k || ''; }
+const pct = (x) => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`;
+const when = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function showMe(me) {
+  const left = me.freeLeft + me.credits;
+  $('credits').textContent = `${left} generation${left === 1 ? '' : 's'} left` + (me.freeLeft ? ` · ${me.freeLeft} free` : '');
+  $('credits').className = 'pill' + (left ? ' ok' : '');
+  $('bGen').disabled = !left;
+  $('plansBox').style.display = left ? 'none' : '';
+  if (me.plans) $('plans').innerHTML = me.plans.map((p) => `<div class="plan"><span>${esc(p.name)}</span><b>${p.priceRon} lei</b></div>`).join('') +
+    '<div class="hint">Payments are coming soon — contact us to top up.</div>';
+}
+
+async function start() {
+  if (!KEY) { $('connect').style.display = ''; $('server').value = SERVER; return; }
+  try {
+    const me = await api('/v1/me');
+    $('connect').style.display = 'none'; $('app').style.display = ''; $('bLogout').style.display = '';
+    showMe(me);
+    if (me.limits) { $('tickets').max = me.limits.maxTickets; $('matches').max = me.limits.maxMatches; }
+    const leagues = await api('/v1/leagues');
+    $('leagues').innerHTML = leagues.map((l) => `<span class="chip" data-code="${l.code}" title="${esc(l.country)}">${l.stats ? '● ' : ''}${esc(l.country)} · ${esc(l.name)}</span>`).join('');
+    document.querySelectorAll('#leagues .chip').forEach((c) => c.onclick = () => c.classList.toggle('on'));
+    history();
+  } catch (e) {
+    if (e.status === 401) { store.del('tm.key'); KEY = ''; $('cmsg').textContent = 'That access key was not accepted.'; }
+    else $('cmsg').textContent = `Can't reach the server (${e.message}).`;
+    $('connect').style.display = ''; $('app').style.display = 'none'; $('server').value = SERVER;
+  }
+}
+
+$('bConnect').onclick = () => {
+  KEY = $('key').value.trim(); store.set('tm.key', KEY);
+  if ($('server').value.trim()) { SERVER = $('server').value.trim().replace(/\/$/, ''); store.set('tm.server', SERVER); }
+  start();
+};
+$('bLogout').onclick = () => { store.del('tm.key'); KEY = ''; location.reload(); };
+
+function ticketText(tk) {
+  return `TicketMind — ticket ${tk.index} (fair odds ${tk.fairOdds.toFixed(2)})\n` + tk.matches.map((m) =>
+    `${m.fixture.home} v ${m.fixture.away} (${when(m.fixture.kickoff)}): ` + m.legs.map((l) => `${l.market}: ${l.pick}`).join(' + ')).join('\n');
+}
+
+function render(result) {
+  if (!result.tickets.length) { $('results').innerHTML = '<div class="card empty">No match fits these settings right now. Try a wider odds range or more days.</div>'; return; }
+  const note = result.found < result.needed ? `<div class="card hint">Found ${result.found} of ${result.needed} matches that passed every check — the tickets are shorter.</div>` : '';
+  $('results').innerHTML = note + result.tickets.map((tk) => `
+    <div class="ticket">
+      <div class="thead"><b>Ticket ${tk.index}</b><span class="stat">${tk.matches.length} matches</span><div class="spacer"></div>
+        <span class="stat">chance <strong>${pct(tk.probability)}</strong></span><span class="stat">fair odds <strong>${tk.fairOdds.toFixed(2)}</strong></span>
+        <button class="btn small" data-copy="${tk.index}">Copy</button></div>
+      ${tk.matches.map((m) => `
+        <div class="match">
+          <div><div class="teams">${esc(m.fixture.home)} – ${esc(m.fixture.away)}</div>
+            <div class="meta">${esc(m.fixture.country)} · ${esc(m.fixture.leagueName)} · ${when(m.fixture.kickoff)}</div></div>
+          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p">${pct(m.adjusted)}</div></div>
+          <div class="legs">${m.legs.map((l) => `<span class="leg">${esc(l.market)}: <b>${esc(l.pick)}</b> <em>${pct(l.probability)}</em></span>`).join('')}</div>
+          ${m.explanation ? `<div class="why">${esc(m.explanation)}</div>` : ''}
+        </div>`).join('')}
+    </div>`).join('');
+  document.querySelectorAll('[data-copy]').forEach((b) => b.onclick = () => {
+    navigator.clipboard.writeText(ticketText(result.tickets[Number(b.dataset.copy) - 1])).then(() => say('Ticket copied.', 'ok'));
+  });
+}
+
+async function history() {
+  try {
+    const items = await api('/v1/history');
+    window._hist = items;
+    $('history').innerHTML = items.length ? items.map((h, i) => `<div class="hist" data-i="${i}"><span>${when(h.createdAt)}</span><span class="hint">${h.tickets.length} ticket(s) · ${h.found} matches</span></div>`).join('')
+      : '<div class="hint">No tickets yet.</div>';
+    document.querySelectorAll('.hist').forEach((d) => d.onclick = () => render(window._hist[Number(d.dataset.i)]));
+  } catch {}
+}
+
+$('bGen').onclick = async () => {
+  const leagues = [...document.querySelectorAll('#leagues .chip.on')].map((c) => c.dataset.code);
+  const req = {
+    tickets: +$('tickets').value, matches: +$('matches').value, minOdds: +$('minOdds').value, maxOdds: +$('maxOdds').value,
+    maxLegs: +$('maxLegs').value, windowHours: +$('windowHours').value, leagues,
+  };
+  if (!(req.maxOdds > req.minOdds)) return say('"to" odds must be above "from" odds.', 'err');
+  $('bGen').disabled = true; say('');
+  try {
+    const { jobId } = await api('/v1/generate', { method: 'POST', body: JSON.stringify(req) });
+    $('runCard').style.display = ''; $('log').textContent = 'Queued…';
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const j = await api(`/v1/jobs/${jobId}`);
+      $('log').textContent = j.log.slice(-12).join('\n') || 'Preparing the models…';
+      $('log').scrollTop = $('log').scrollHeight;
+      if (j.status === 'done') { render(j.result); showMe(j.me); history(); say('Done.', 'ok'); break; }
+      if (j.status === 'failed') { say(j.error, 'err'); break; }
+    }
+  } catch (e) {
+    say(e.message, 'err');
+    if (e.status === 402 && e.data?.plans) showMe({ freeLeft: 0, credits: 0, plans: e.data.plans });
+  } finally {
+    $('runCard').style.display = 'none';
+    $('bGen').disabled = false;
+    api('/v1/me').then(showMe).catch(() => {});
+  }
+};
+
+start();
+</script>
+</body>
+</html>

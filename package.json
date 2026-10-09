@@ -1,0 +1,32 @@
+{
+  "name": "ticketmind",
+  "version": "0.1.0",
+  "description": "TicketMind - AI football ticket generator: statistical models + AI news analysis, served from a private API server",
+  "private": true,
+  "scripts": {
+    "server": "tsx src/server/server.ts",
+    "app": "tsx src/server/server.ts --open",
+    "generate": "tsx src/engine/cli.ts",
+    "user": "tsx src/server/userCli.ts",
+    "test": "jest"
+  },
+  "type": "commonjs",
+  "devDependencies": {
+    "@jest/globals": "^30.0.0-alpha.3",
+    "@types/jest": "^29.5.12",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.6.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0",
+    "axios": "^1.15.2",
+    "dotenv": "^17.4.2",
+    "js-yaml": "^4.1.0",
+    "winston": "^3.19.0",
+    "zod": "^4.4.1"
+  }
+}
