@@ -5,7 +5,6 @@
  * (`stages/news/newsAgent.ts` asks for the language).
  */
 export type Lang = 'ro' | 'en';
-export const LANGS: Lang[] = ['ro', 'en'];
 export const asLang = (v: unknown): Lang => (v === 'en' ? 'en' : 'ro');
 
 const cap = (x: string) => x[0].toUpperCase() + x.slice(1);

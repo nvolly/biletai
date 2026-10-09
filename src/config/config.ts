@@ -87,7 +87,6 @@ const settingsSchema = z.object({
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
-export type Env = z.infer<typeof envSchema>;
 
 export const SETTINGS_FILE = path.resolve(process.cwd(), 'config', 'settings.yaml');
 
