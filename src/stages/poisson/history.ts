@@ -94,7 +94,7 @@ export function parseCsv(text: string, league: string): MatchRecord[] {
     const yellow = pair('HY', 'AY');
     const reds = pair('HR', 'AR');
     if (reds) stats.reds = reds;
-    // Superbet's "cartonaÈ™e" counts cards shown, so a red is one more card on top of yellows.
+    // "Cards" counts every card shown, so a red is one more card on top of the yellows.
     if (yellow && reds) stats.cards = [yellow[0] + reds[0], yellow[1] + reds[1]];
 
     // Closing average prices first (the efficient benchmark), then Pinnacle, then Bet365.
@@ -159,7 +159,7 @@ export async function loadLeagueHistory(league: LeagueDef, seasons: number, now 
   return records.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Days between the newest result and `now` â€” football-data.co.uk lags by up to ~2 weeks. */
+/** Days between the newest result and `now`: football-data.co.uk lags by up to ~2 weeks. */
 export function staleDays(records: MatchRecord[], now = new Date()): number {
   if (!records.length) return Infinity;
   const last = records[records.length - 1].date;
