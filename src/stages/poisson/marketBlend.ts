@@ -1,6 +1,5 @@
 import { scoreMatrix } from './dixonColes';
 import { probWhere, pred } from './markets';
-import { countTable } from './distributions';
 
 /**
  * Expected goals implied by the market's own prices, so the model can be blended with them:
@@ -34,22 +33,6 @@ export function impliedGoalLambdas(fair: { home: number; away: number; over25?: 
     }
   }
   return best;
-}
-
-/** Mean count whose P(count > line) equals `pOver`, for a given dispersion. */
-export function impliedCountMean(line: number, pOver: number, dispersion: number, max = 60): number {
-  const over = (mean: number) => {
-    const t = countTable(mean, dispersion, max);
-    let below = 0;
-    for (let k = 0; k <= Math.floor(line); k++) below += t[k];
-    return 1 - below;
-  };
-  let lo = 0.01, hi = max * 0.8;
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    if (over(mid) < pOver) lo = mid; else hi = mid;
-  }
-  return (lo + hi) / 2;
 }
 
 export function blend(model: number, market: number | null | undefined, modelWeight: number): number {
