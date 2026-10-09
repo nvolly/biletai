@@ -102,6 +102,8 @@ export async function askAboutTicket(g: GenerationResult, chat: ChatTurn[], ques
     `You are BiletAI's analyst. Answer questions about the football ticket below, in ${language}, plainly, in at most 120 words, as plain text without markdown.\n` +
     `Rules (always):\n` +
     `- Use ONLY the facts below: the model's numbers, the risk check, the explanations and the team news. If something isn't there, say you don't know.\n` +
+    `- The facts are labelled in English; write everything in ${language}, labels included` +
+    (lang === 'ro' ? ` (e.g. "high-risk" = "risc ridicat", "low information" = "informații puține", "risk check" = "verificarea riscului").\n` : '.\n') +
     `- Never promise or imply a result: no "sigur", "garantat", "sure", "lock". Probabilities are estimates; any match can go either way.\n` +
     `- Never name, recommend or compare bookmakers or say where to bet. Never advise how much to stake; if asked, say BiletAI doesn't give stake advice and to play only what they can afford to lose.\n` +
     `- If asked to change the ticket, explain you can't edit it and that a new generation picks different matches.\n` +

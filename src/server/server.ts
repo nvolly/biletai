@@ -276,6 +276,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// A generation keeps the event loop busy for ~15 s of simulation. With Node's 5 s default the
+// idle-socket timer fires right after, and clients polling on a kept-alive connection get
+// ECONNRESET. A longer keep-alive avoids that (moving generation to a worker thread is on the
+// to-do list).
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
+
 server.listen(PORT, () => {
   const url = `http://127.0.0.1:${PORT}`;
   console.log(`\n  BiletAI server on ${url}\n`);

@@ -125,6 +125,31 @@
   .tbar > i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
   .tbar > b { position: absolute; top: -4px; width: 2px; height: 14px; background: var(--ink); border-radius: 1px; }
   .tsum { font-size: 13px; } .tsum strong { font-size: 15px; }
+  /* Plans popup. */
+  .modal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgba(8, 10, 22, .62); backdrop-filter: blur(3px); }
+  .modal[hidden] { display: none; }
+  .sheet { position: relative; width: min(880px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 18px; padding: 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+  .sheet h2 { margin: 0 0 4px; font-size: 21px; }
+  .sheet .x { position: absolute; top: 14px; right: 14px; }
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 14px; }
+  @media (max-width: 720px) { .tiers { grid-template-columns: 1fr; } }
+  .tier { position: relative; border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--bg); }
+  .tier.featured { border: 2px solid var(--accent); box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .tier .badge { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: var(--accent); color: var(--accent-ink); font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .tier h3 { margin: 0; font-size: 16px; }
+  .tier .price b { font-size: 30px; } .tier .price span { color: var(--muted); }
+  .tier ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.7; flex: 1; }
+  .tier .btn { width: 100%; }
+  #topup .plan { margin-bottom: 10px; }
+  .pill.clickable { cursor: pointer; }
+  /* Demo: a real ticket before signing in. */
+  .demoInvite { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .demoBar { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .demoBar .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .demoBar .row .btn { width: auto; padding: 8px 16px; font-size: 13.5px; }
+  body.demo main { grid-template-columns: 1fr; max-width: 920px; }
+  body.demo main > section:first-child, body.demo #credits, body.demo #bLogout, body.demo .tools { display: none; }
   /* Request box and ticket chat. */
   .nl { display: flex; gap: 8px; }
   .nl input { flex: 1; min-width: 0; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); }
@@ -159,6 +184,7 @@
   </details>
   <button class="btn primary" id="bConnect" style="margin-top:12px" data-t="enter"></button>
   <div id="cmsg" class="hint" style="margin-top:8px"></div>
+  <div class="demoInvite"><span class="hint" data-t="demoInvite"></span><button class="btn small" id="bDemo" data-t="demoBtn"></button></div>
 </div>
 
 <main id="app" style="display:none">
@@ -192,10 +218,7 @@
     <div class="card">
       <button class="btn primary" id="bGen" data-t="generate"></button>
       <div id="msg"></div>
-      <div id="plansBox" style="display:none">
-        <div class="hint" style="margin-top:6px" data-t="plans"></div>
-        <div class="plans" id="plans"></div>
-      </div>
+      <button class="btn small" id="bPlans" style="display:none; margin-top:8px" data-t="seePlans"></button>
     </div>
     <div class="card">
       <h2 data-t="history"></h2>
@@ -208,6 +231,7 @@
   </section>
 
   <section>
+    <div class="card demoBar" id="demoBar" style="display:none"></div>
     <div class="card" id="runCard" style="display:none">
       <h2 id="runTitle"></h2>
       <div class="progress" id="progress"><div></div></div>
@@ -219,6 +243,17 @@
 
 <footer data-t="footerHtml"></footer>
 
+<div id="plansModal" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="plansTitle">
+    <button class="icon x" id="bClosePlans" aria-label="×">×</button>
+    <h2 id="plansTitle"></h2>
+    <div class="hint" id="plansSub"></div>
+    <div class="tiers" id="tiers"></div>
+    <div id="topup"></div>
+    <div class="hint" id="plansNote"></div>
+  </div>
+</div>
+
 <script>
 const T = {
   ro: {
@@ -228,7 +263,7 @@ const T = {
     oddsTo: 'până la', maxLegs: 'Selecții pe meci (maxim)', within: 'Meciuri în următoarele',
     win: { 24: '24 de ore', 48: '2 zile', 72: '3 zile', 144: '6 zile' },
     leagues: 'Campionate', noneAll: '(niciunul selectat = toate)', leagueKey: '● = goluri, cornere, cartonașe și șuturi · restul: doar piețe de goluri',
-    generate: 'Generează bilete', plans: 'Abonamente', history: 'Istoric', noHistory: 'Încă nu ai bilete generate.', working: 'Se generează', analysis: 'Analiza AI',
+    generate: 'Generează bilete', history: 'Istoric', noHistory: 'Încă nu ai bilete generate.', working: 'Se generează', analysis: 'Analiza AI',
     betType: 'Tip de pariu', simple: 'Simplu', combo: 'Combinat',
     simpleHint: 'o selecție pe meci', comboHint: '2–4 selecții pe același meci',
     total: 'cotă corectă totală', cumulated: 'Cote cumulate',
@@ -256,6 +291,15 @@ const T = {
     emptyHtml: 'Alege setările și apasă <b>Generează bilete</b>.<br><b>Simplu</b>: o selecție pe meci. <b>Combinat</b>: 2–4 selecții pe același meci.<br>Cotele meciurilor se cumulează în <b>cota corectă totală</b> a biletului, alături de <b>probabilitate</b>.',
     footerHtml: '<b>Doar pentru persoane peste 18 ani.</b> BiletAI oferă predicții statistice, nu garanții: orice meci se poate termina altfel. Cota corectă = 1 / probabilitatea calculată de model; compar-o cu ce ți se oferă. Joacă responsabil și doar cât îți permiți să pierzi.',
     left: (n, free) => (n === 1 ? '1 generare rămasă' : `${n} generări rămase`) + (free ? ` · ${free} gratuite` : ''),
+    leftPlan: (name, n) => `${name} · ${n === 1 ? '1 generare rămasă' : `${n} generări rămase`}`,
+    seePlans: 'Vezi abonamentele', plansTitle: 'Abonamente BiletAI', plansSub: 'Generările se reînnoiesc în fiecare lună.',
+    plansOut: 'Ai folosit generările disponibile', plansOutSub: 'Alege un abonament ca să continui. Biletele și istoricul tău rămân salvate.',
+    recommended: 'Recomandat', month: 'lună', gensMonth: (n) => `${n} generări pe lună`, questionsPer: (n) => `${n} întrebări AI pe bilet`,
+    allFeatures: 'Simplu și Combinat, toate campionatele', perGen: (x) => `≈ ${x} lei pe generare`, soon: 'În curând', noExpiry: 'nu expiră',
+    plansLegal: 'Prețurile includ TVA. BiletAI oferă predicții statistice, fără garanții. Doar 18+.',
+    demoInvite: 'Vrei să vezi întâi cum arată?', demoBtn: 'Vezi un bilet demo', noDemo: 'Încă nu există un bilet demo.', demoTitle: 'Bilet demo',
+    demoText: (n) => `Un bilet real, generat de BiletAI înainte de meciuri. Unde meciul s-a jucat, scorul real apare în locul orei (verde = a ieșit, roșu = nu). Intră în cont: primele ${n} generări sunt gratuite.`,
+    demoSignIn: 'Intră în cont',
     payLater: 'Plata online vine în curând.', badKey: 'Cheia de acces nu a fost acceptată.', noServer: (m) => `Serverul nu răspunde (${m}).`,
     ticket: 'Biletul', matches: 'meciuri', chance: 'șansă să iasă', fair: 'cotă corectă', copy: 'Copiază', copied: 'Bilet copiat.',
     none: 'Niciun meci nu se potrivește acum cu aceste setări. Încearcă un interval de cote mai larg sau mai multe zile.',
@@ -271,7 +315,7 @@ const T = {
     oddsTo: 'to', maxLegs: 'Selections per match (max)', within: 'Matches within',
     win: { 24: '24 hours', 48: '2 days', 72: '3 days', 144: '6 days' },
     leagues: 'Leagues', noneAll: '(none selected = all)', leagueKey: '● = goals, corners, cards and shots · others: goal markets only',
-    generate: 'Generate tickets', plans: 'Plans', history: 'History', noHistory: 'No tickets yet.', working: 'Generating', analysis: 'AI analysis',
+    generate: 'Generate tickets', history: 'History', noHistory: 'No tickets yet.', working: 'Generating', analysis: 'AI analysis',
     betType: 'Bet type', simple: 'Single', combo: 'Combo',
     simpleHint: 'one selection per match', comboHint: '2–4 selections on the same match',
     total: 'total fair odds', cumulated: 'Cumulated odds',
@@ -299,6 +343,15 @@ const T = {
     emptyHtml: 'Choose your settings and press <b>Generate tickets</b>.<br><b>Single</b>: one selection per match. <b>Combo</b>: 2–4 selections on the same match.<br>The match odds multiply into the ticket\'s <b>total fair odds</b>, shown with its <b>probability</b>.',
     footerHtml: '<b>18+ only.</b> BiletAI provides statistical predictions, not guarantees: any match can go either way. Fair odds = 1 / the model\'s probability; compare them with what you are offered. Play responsibly and only what you can afford to lose.',
     left: (n, free) => (n === 1 ? '1 generation left' : `${n} generations left`) + (free ? ` · ${free} free` : ''),
+    leftPlan: (name, n) => `${name} · ${n === 1 ? '1 generation left' : `${n} generations left`}`,
+    seePlans: 'See the plans', plansTitle: 'BiletAI plans', plansSub: 'Generations renew every month.',
+    plansOut: "You've used your available generations", plansOutSub: 'Choose a plan to continue. Your tickets and history stay saved.',
+    recommended: 'Recommended', month: 'month', gensMonth: (n) => `${n} generations a month`, questionsPer: (n) => `${n} AI questions per ticket`,
+    allFeatures: 'Single and Combo, every league', perGen: (x) => `≈ ${x} lei per generation`, soon: 'Coming soon', noExpiry: 'never expires',
+    plansLegal: 'Prices include VAT. BiletAI provides statistical predictions, no guarantees. 18+ only.',
+    demoInvite: 'Want to see what it looks like first?', demoBtn: 'See a demo ticket', noDemo: 'There is no demo ticket yet.', demoTitle: 'Demo ticket',
+    demoText: (n) => `A real ticket, generated by BiletAI before the matches. Where a match has been played, the real score replaces the kickoff time (green = came in, red = didn't). Sign in: your first ${n} generations are free.`,
+    demoSignIn: 'Sign in',
     payLater: 'Online payment is coming soon.', badKey: 'That access key was not accepted.', noServer: (m) => `Can't reach the server (${m}).`,
     ticket: 'Ticket', matches: 'matches', chance: 'win chance', fair: 'fair odds', copy: 'Copy', copied: 'Ticket copied.',
     none: 'No match fits these settings right now. Try a wider odds range or more days.',
@@ -371,16 +424,64 @@ const clockTime = (iso) => new Date(iso).toLocaleTimeString(t().locale, { hour: 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const country = (c) => t().countries[c] || c;
 
+// Generations left: free + this month's plan + top-up credits.
+const leftOf = (me) => (me ? me.freeLeft + me.credits + (me.plan?.left || 0) : 0);
+
 function showMe(me) {
   ME = me;
-  const left = me.freeLeft + me.credits;
-  $('credits').textContent = t().left(left, me.freeLeft);
-  $('credits').className = 'pill' + (left ? ' ok' : '');
-  $('bGen').disabled = !left;
-  $('plansBox').style.display = left ? 'none' : '';
-  if (me.plans) $('plans').innerHTML = me.plans.map((p) => `<div class="plan"><span>${LANG === 'ro' ? `${p.generations} generări` : `${p.generations} generations`}</span><b>${p.priceRon} lei</b></div>`).join('') +
-    `<div class="hint">${t().payLater}</div>`;
+  if (me.plans) PLANS = me.plans;
+  const left = leftOf(me);
+  $('credits').textContent = me.plan ? t().leftPlan(me.plan.name, left) : t().left(left, me.freeLeft);
+  $('credits').className = 'pill clickable' + (left ? ' ok' : '');
+  $('credits').title = t().seePlans;
+  $('bPlans').style.display = left ? 'none' : '';
 }
+
+// ---- plans popup: when generations run out, or from the generations pill ----
+let PLANS = [];
+function openPlans(mode = 'browse') {
+  const monthly = PLANS.filter((p) => p.period === 'month'), once = PLANS.filter((p) => p.period === 'once');
+  $('plansTitle').textContent = mode === 'out' ? t().plansOut : t().plansTitle;
+  $('plansSub').textContent = mode === 'out' ? t().plansOutSub : t().plansSub;
+  $('tiers').innerHTML = monthly.map((p) => `
+    <div class="tier${p.featured ? ' featured' : ''}">
+      ${p.featured ? `<span class="badge">${t().recommended}</span>` : ''}
+      <h3>${esc(p.name)}</h3>
+      <div class="price"><b>${p.priceRon}</b> lei<span> / ${t().month}</span></div>
+      <ul><li>${t().gensMonth(p.generations)}</li><li>${t().questionsPer(p.questions)}</li><li>${t().allFeatures}</li></ul>
+      <div class="hint">${t().perGen((p.priceRon / p.generations).toFixed(2))}</div>
+      <button class="btn${p.featured ? ' primary' : ''}" disabled>${t().soon}</button>
+    </div>`).join('');
+  $('topup').innerHTML = once.map((p) => `<div class="plan"><span>${esc(p.name)} · ${t().questionsPer(p.questions)} · ${t().noExpiry}</span><b>${p.priceRon} lei</b></div>`).join('');
+  $('plansNote').textContent = `${t().payLater} ${t().plansLegal}`;
+  $('plansModal').hidden = false;
+}
+const closePlans = () => { $('plansModal').hidden = true; };
+$('bClosePlans').onclick = closePlans;
+$('plansModal').onclick = (e) => { if (e.target === $('plansModal')) closePlans(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlans(); });
+$('credits').onclick = () => openPlans('browse');
+$('bPlans').onclick = () => openPlans('out');
+
+// ---- demo: a real BiletAI ticket (with real results once played), before signing in ----
+$('bDemo').onclick = async () => {
+  try {
+    const r = await fetch(SERVER + '/demo').then((x) => x.json());
+    if (r.plans) PLANS = r.plans;
+    if (!r.generation) { $('cmsg').textContent = t().noDemo; return; }
+    document.body.classList.add('demo');
+    $('connect').style.display = 'none'; $('app').style.display = '';
+    $('demoBar').style.display = '';
+    $('demoBar').innerHTML = `<b>${t().demoTitle}</b><div class="hint" style="margin-top:4px">${t().demoText(r.freeGenerations)}</div>
+      <div class="row"><button class="btn primary small" id="bDemoIn">${t().demoSignIn}</button><button class="btn small" id="bDemoPlans">${t().seePlans}</button></div>`;
+    $('bDemoIn').onclick = () => {
+      document.body.classList.remove('demo'); LAST = null; $('results').innerHTML = '';
+      $('demoBar').style.display = 'none'; $('app').style.display = 'none'; $('connect').style.display = '';
+    };
+    $('bDemoPlans').onclick = () => openPlans('browse');
+    render(r.generation);
+  } catch (e) { $('cmsg').textContent = t().noServer(e.message); }
+};
 
 function drawLeagues() {
   const on = new Set([...document.querySelectorAll('#leagues .chip.on')].map((c) => c.dataset.code));
@@ -650,7 +751,7 @@ $('bNl').onclick = async () => {
 $('nl').onkeydown = (e) => { if (e.key === 'Enter') $('bNl').click(); };
 
 // ---- ask about the ticket: a chat limited to this generation's tickets and news ----
-const ASK_MAX = 10;
+const ASK_MAX = 10;   // generations made before plans set questionsAllowed
 function chatCard(result) {
   if (!result.id) return '';
   return `<div class="card" id="chatCard"><h2>${t().askTitle}</h2>
@@ -670,7 +771,7 @@ function addChat(who, text, animate = false, cls = '') {
 }
 function wireChat(result) {
   if (!$('chatCard')) return;
-  const left = () => { $('askLeft').textContent = t().askLeft(Math.max(0, ASK_MAX - (result.chat || []).length)); };
+  const left = () => { $('askLeft').textContent = t().askLeft(Math.max(0, (result.questionsAllowed ?? ASK_MAX) - (result.chat || []).length)); };
   (result.chat || []).forEach((turn) => { addChat('me', turn.q); addChat('ai', turn.a); });
   left();
   const send = async (q) => {
@@ -731,6 +832,7 @@ $('bGen').onclick = async () => {
     maxLegs: +$('maxLegs').value, windowHours: +$('windowHours').value, leagues, lang: LANG,
   };
   if (!(req.maxOdds > req.minOdds)) return say(t().oddsOrder, 'err');
+  if (ME && !leftOf(ME)) return openPlans('out');
   $('bGen').disabled = true; say('');
   try {
     const { jobId } = await api('/v1/generate', { method: 'POST', body: JSON.stringify(req) });
@@ -742,14 +844,17 @@ $('bGen').onclick = async () => {
       if (j.status === 'done') {
         await feedEnd();
         // The id is the history entry's id, so questions about this ticket find it.
-        render({ ...j.result, id: jobId }, { animate: true }); showMe(j.me); history(); say(t().done, 'ok'); break;
+        render({ ...j.result, id: jobId }, { animate: true }); showMe(j.me); history(); say(t().done, 'ok');
+        // That was the last one: show the plans once they've had a moment with the ticket.
+        if (!leftOf(j.me)) setTimeout(() => openPlans('out'), 3500);
+        break;
       }
       if (j.status === 'failed') { await feedEnd(); say(j.error, 'err'); break; }
     }
   } catch (e) {
     feedStop();
     say(e.message, 'err');
-    if (e.status === 402 && e.data?.plans) showMe({ freeLeft: 0, credits: 0, plans: e.data.plans });
+    if (e.status === 402) { if (e.data?.plans) PLANS = e.data.plans; openPlans('out'); }
   } finally {
     $('bGen').disabled = false;
     api('/v1/me').then(showMe).catch(() => {});
