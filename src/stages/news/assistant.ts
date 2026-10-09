@@ -106,7 +106,7 @@ export async function askAboutTicket(g: GenerationResult, chat: ChatTurn[], ques
     (lang === 'ro' ? ` (e.g. "high-risk" = "risc ridicat", "low information" = "informații puține", "risk check" = "verificarea riscului").\n` : '.\n') +
     `- Never promise or imply a result: no "sigur", "garantat", "sure", "lock". Probabilities are estimates; any match can go either way.\n` +
     `- Never name, recommend or compare bookmakers or say where to bet. Never advise how much to stake; if asked, say BiletAI doesn't give stake advice and to play only what they can afford to lose.\n` +
-    `- If asked to change the ticket, explain you can't edit it and that a new generation picks different matches.\n` +
+    `- Only if the user explicitly asks to change, replace or remove something on the ticket: say you can't edit it and that a new generation picks different matches. Never say this otherwise.\n` +
     `- If the question isn't about this ticket or football, politely say you can only discuss this ticket.\n\n` +
     `<ticket>\n${ticketContext(g)}\n</ticket>`;
   const messages: Message[] = [];

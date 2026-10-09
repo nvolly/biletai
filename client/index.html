@@ -30,8 +30,8 @@
   header { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; flex-wrap: wrap;
     --pitch: color-mix(in srgb, var(--accent-2) 16%, transparent);
     background:
-      radial-gradient(circle at 72% 50%, transparent 44px, var(--pitch) 45px 46.5px, transparent 47.5px),
-      linear-gradient(90deg, transparent calc(72% - 1px), var(--pitch) calc(72% - 1px) calc(72% + 1px), transparent calc(72% + 1px)),
+      radial-gradient(circle at 55% 50%, transparent 44px, var(--pitch) 45px 46.5px, transparent 47.5px),
+      linear-gradient(90deg, transparent calc(55% - 1px), var(--pitch) calc(55% - 1px) calc(55% + 1px), transparent calc(55% + 1px)),
       var(--panel); }
   .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; color: #fff; font-weight: 800; position: relative; }
   .logo::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px;
@@ -143,6 +143,7 @@
   .tier .btn { width: 100%; }
   #topup .plan { margin-bottom: 10px; }
   .pill.clickable { cursor: pointer; }
+  #credits:empty { display: none; }
   /* Demo: a real ticket before signing in. */
   .demoInvite { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
   .demoBar { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
