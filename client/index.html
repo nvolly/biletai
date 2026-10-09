@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BiletAI</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b5bf7'/%3E%3Ctext x='29' y='45' font-family='Segoe UI,Arial' font-size='36' font-weight='800' fill='white' text-anchor='middle'%3EB%3C/text%3E%3Ccircle cx='47' cy='44' r='6' fill='%2334d399'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b5bf7'/%3E%3Ctext x='29' y='45' font-family='Segoe UI,Arial' font-size='36' font-weight='800' fill='white' text-anchor='middle'%3EB%3C/text%3E%3Ccircle cx='48' cy='46' r='10' fill='white' stroke='%2334d399' stroke-width='3'/%3E%3Cpath d='M48 41.5l4.3 3.1-1.6 5h-5.4l-1.6-5z' fill='%23161a2b'/%3E%3C/svg%3E">
 <style>
   /* The original BiletAI look: indigo accent, green highlight. Light = the same design on
      white; dark = the original deep navy. The ◐ button overrides the system choice. */
@@ -23,9 +23,16 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; flex-wrap: wrap; }
+  /* Football only: faint halfway line and centre circle behind the header, a ball on the logo. */
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; flex-wrap: wrap;
+    --pitch: color-mix(in srgb, var(--accent-2) 16%, transparent);
+    background:
+      radial-gradient(circle at 72% 50%, transparent 44px, var(--pitch) 45px 46.5px, transparent 47.5px),
+      linear-gradient(90deg, transparent calc(72% - 1px), var(--pitch) calc(72% - 1px) calc(72% + 1px), transparent calc(72% + 1px)),
+      var(--panel); }
   .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; color: #fff; font-weight: 800; position: relative; }
-  .logo::after { content: ""; position: absolute; right: 4px; bottom: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); }
+  .logo::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='8.6' fill='%23fff' stroke='%2334d399' stroke-width='2.4'/%3E%3Cpath d='M10 6.3l3.5 2.5-1.3 4.1H7.8L6.5 8.8z' fill='%23161a2b'/%3E%3C/svg%3E") center / contain no-repeat; }
   h1 { font-size: 18px; margin: 0; letter-spacing: .2px; } h1 span { color: var(--accent); }
   .spacer { flex: 1; }
   .pill { padding: 4px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--field); border: 1px solid var(--line); color: var(--muted); }
@@ -59,14 +66,19 @@
   .ticket { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 14px; overflow: hidden; background: var(--panel); box-shadow: var(--shadow); }
   .thead { display: flex; align-items: center; gap: 10px; padding: 12px 16px; flex-wrap: wrap; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent); border-bottom: 1px solid var(--line); }
   .thead b { font-size: 15px; } .stat { font-size: 12.5px; color: var(--muted); } .stat strong { color: var(--ink); font-size: 14px; }
-  .match { padding: 11px 16px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; }
+  .match { padding: 11px 16px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; }
+  /* Scoreboard clock: kickoff time before the match, the final score once it's settled. */
+  .clock { min-width: 50px; text-align: center; font: 700 13px/1 ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 7px 6px; border-radius: 8px;
+    background: var(--field); border: 1px solid var(--line); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .clock.won { background: color-mix(in srgb, var(--accent-2) 22%, transparent); border-color: transparent; color: var(--ok); }
+  .clock.lost { background: color-mix(in srgb, var(--bad) 14%, transparent); border-color: transparent; color: var(--bad); }
   .match:last-child { border-bottom: 0; }
   .teams { font-weight: 650; } .meta { font-size: 12px; color: var(--muted); }
-  .legs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .legs { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
   .leg { font-size: 12.5px; padding: 3px 9px; border-radius: 8px; background: var(--field); border: 1px solid var(--line); }
   .leg em { font-style: normal; color: var(--muted); }
   .odds { text-align: right; } .odds .o { font-size: 16px; font-weight: 750; } .odds .p { font-size: 12px; color: var(--muted); }
-  .why { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .why { grid-column: 2 / -1; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
   .hist { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; gap: 8px; }
   .hist:last-child { border-bottom: 0; } .hist:hover { color: var(--accent); }
@@ -255,6 +267,7 @@ async function api(path, opts = {}) {
 function say(s, k) { $('msg').textContent = s; $('msg').className = k || ''; }
 const pct = (x) => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`;
 const when = (iso) => new Date(iso).toLocaleString(t().locale, { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const clockTime = (iso) => new Date(iso).toLocaleTimeString(t().locale, { hour: '2-digit', minute: '2-digit' });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const country = (c) => t().countries[c] || c;
 
@@ -322,6 +335,7 @@ function render(result) {
       ${tk.matches.length > 1 ? `<div class="cumul">${t().cumulated}: ${cumulLine(tk)}</div>` : ''}
       ${tk.matches.map((m) => `
         <div class="match">
+          <div class="clock">${clockTime(m.fixture.kickoff)}</div>
           <div><div class="teams">${esc(m.fixture.home)} – ${esc(m.fixture.away)}</div>
             <div class="meta">${esc(country(m.fixture.country))} · ${esc(m.fixture.leagueName)} · ${when(m.fixture.kickoff)}</div></div>
           <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p">${pct(m.adjusted)}</div></div>
