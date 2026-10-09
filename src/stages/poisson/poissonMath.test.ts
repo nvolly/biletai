@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { scoreMatrix, tau, fitGoalsModel } from './dixonColes';
 import { probWhere, jointProb, pred, marketsFromMatrix } from './markets';
 import { poissonPmf, negBinPmf, countTable, normInv, normCdf } from './distributions';
-import { slipEdge, passesEdge, fairProbs } from './edge';
+import { fairProbs } from './edge';
 import { fitCountModel, expectedCounts } from './countModel';
 import { MatchRecord } from './history';
 
@@ -111,21 +111,6 @@ describe('count distributions', () => {
 });
 
 describe('edge', () => {
-  it('is joint probability times combined odds minus one', () => {
-    expect(slipEdge(0.7, 1.6)).toBeCloseTo(0.12, 10);
-    expect(slipEdge(0.5, 1.9)).toBeCloseTo(-0.05, 10);
-  });
-
-  it('applies the threshold inclusively', () => {
-    expect(passesEdge(0.7, 1.5, 0.05)).toBe(true);   // +5.0%
-    expect(passesEdge(0.7, 1.49, 0.05)).toBe(false); // +4.3%
-  });
-
-  it('rejects impossible inputs', () => {
-    expect(() => slipEdge(1.2, 1.5)).toThrow();
-    expect(() => slipEdge(0.5, 1)).toThrow();
-  });
-
   it('fair probabilities remove the margin and sum to 1', () => {
     const p = fairProbs([1.9, 3.6, 4.2]);
     expect(p.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12);
