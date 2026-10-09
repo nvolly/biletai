@@ -40,6 +40,20 @@ Other commands:
 - `npm run user -- list | credit <email> <n> | key <email>`: user admin on the server.
 - `npm test`: runs the tests.
 
+## Desktop app (Windows)
+
+`desktop/` wraps `client/index.html` in an Electron window. It talks only to the server set in
+`desktop/config.json` (`serverUrl`) and holds no keys.
+
+```bash
+cd desktop && npm install          # once
+npm run desktop                    # run it (start the server first)
+npm run desktop:dist               # build desktop/dist/BiletAI Setup <version>.exe
+```
+
+Before releasing: point `serverUrl` at the HTTPS server, sign the installer with a
+code-signing certificate, and add auto-update.
+
 ## API
 
 All `/v1` calls need `Authorization: Bearer <access key>`.

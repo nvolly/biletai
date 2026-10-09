@@ -1,0 +1,44 @@
+{
+  "name": "biletai-desktop",
+  "productName": "BiletAI",
+  "version": "0.1.0",
+  "author": "BiletAI",
+  "description": "BiletAI desktop app: the same UI as client/, in its own window. Talks to the BiletAI server; holds no keys.",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "ro.biletai.app",
+    "productName": "BiletAI",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../client",
+        "to": "client"
+      }
+    ],
+    "win": {
+      "icon": "../assets/app.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "BiletAI"
+    }
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  }
+}

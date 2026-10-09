@@ -100,8 +100,12 @@ Status:
 2. **Apps from one codebase:** turn `client/` into a small web app, then wrap it:
    - **Android + iOS:** Capacitor (same HTML/JS). iOS builds need a Mac or a cloud build
      (e.g. Codemagic).
-   - **Desktop:** Tauri or Electron. Today `npm run app` opens it in a Chrome app window for
-     development.
+   - **Desktop:** **Electron, in `desktop/`** (decided 2026-10-09: Tauri needs Rust plus ~6 GB
+     of Visual Studio build tools, Electron runs on the Node already installed). It loads
+     `client/index.html` in a sandboxed window (no Node in the page) and points it at
+     `desktop/config.json` → `serverUrl`. `npm run desktop:dist` builds the Windows installer.
+     **Before release:** set `serverUrl` to the HTTPS server, buy a code-signing certificate
+     (otherwise SmartScreen warns), add auto-update.
 3. **Accounts:** email sign-up/login in the app, replacing admin-issued access keys.
 4. **Payments:** Stripe (or a Romanian processor) for web/desktop. **Mobile subscriptions must
    use Apple/Google in-app purchases** (15–30% fee).
@@ -131,6 +135,8 @@ Status:
   must lower the joint probability by ≥ 2%) just to make tickets look longer.
 - Edit files with UTF-8-safe tools. PowerShell 5.1 `Get-Content`/`Set-Content` garbles
   diacritics (it happened twice on 2026-10-09); use the editor tools or small Node scripts.
+- Launching Electron from a shell inside VS Code: clear `ELECTRON_RUN_AS_NODE` first (VS Code
+  sets it to 1, which makes Electron run as plain Node with no window).
 
 ## Commands
 
@@ -138,6 +144,8 @@ Status:
 |---|---|
 | `npm run app` | Server + desktop UI in a Chrome app window (development) |
 | `npm run server` | API server only (port 8787) |
+| `npm run desktop` | The Electron desktop app (start the server first) |
+| `npm run desktop:dist` | Build the Windows installer into `desktop/dist/` |
 | `npm run generate -- 2 5 [--no-ai]` | Generate from the terminal |
 | `npm run user -- add <email> [credits]` | Create a user and print the access key once (`credit`, `key`, `list` also exist) |
 | `npm test` | Unit tests (models, simulation, builder) |

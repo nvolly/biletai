@@ -186,7 +186,8 @@ const T = {
 const $ = (id) => document.getElementById(id);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }, del: (k) => { try { localStorage.removeItem(k); } catch {} } };
 let LANG = store.get('biletai.lang') === 'en' ? 'en' : 'ro';
-let SERVER = store.get('biletai.server') || (location.protocol.startsWith('http') ? location.origin : 'http://127.0.0.1:8787');
+// The desktop app passes its configured server; the browser uses the page's own origin.
+let SERVER = store.get('biletai.server') || window.BILETAI?.defaultServer || (location.protocol.startsWith('http') ? location.origin : 'http://127.0.0.1:8787');
 let KEY = store.get('biletai.key') || '';
 let LEAGUES = [], LAST = null, ME = null;
 const t = () => T[LANG];
