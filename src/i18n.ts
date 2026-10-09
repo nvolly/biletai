@@ -32,6 +32,7 @@ export const MSG = {
   ro: {
     upcoming: (n: number, h: number, need: number) => `${n} meciuri în următoarele ${h} ore; sunt necesare ${need}`,
     withCombo: (n: number, lo: number, hi: number) => `${n} meciuri au o combinație cu cota ${lo}-${hi}`,
+    withPick: (n: number, lo: number, hi: number) => `${n} meciuri au o selecție cu cota ${lo}-${hi}`,
     skipped: (m: string, why: string) => `sărit ${m}: ${why}`,
     notFit: 'selecțiile nu se potrivesc cu știrile',
     added: (m: string, legs: string, odds: string, k: number, n: number) => `+ ${m}: ${legs} @ ${odds} (${k}/${n})`,
@@ -48,6 +49,7 @@ export const MSG = {
   en: {
     upcoming: (n: number, h: number, need: number) => `${n} matches in the next ${h} hours; ${need} needed`,
     withCombo: (n: number, lo: number, hi: number) => `${n} matches have a combination at odds ${lo}-${hi}`,
+    withPick: (n: number, lo: number, hi: number) => `${n} matches have a selection at odds ${lo}-${hi}`,
     skipped: (m: string, why: string) => `skipped ${m}: ${why}`,
     notFit: "the selections don't fit the news",
     added: (m: string, legs: string, odds: string, k: number, n: number) => `+ ${m}: ${legs} @ ${odds} (${k}/${n})`,

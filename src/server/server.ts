@@ -7,7 +7,7 @@ import { env, paths, settings } from '../config/config';
 import { logger } from '../utils/logger';
 import { buildModelBank, ModelBank } from '../stages/poisson/modelBank';
 import { LEAGUES } from '../stages/poisson/leagues';
-import { generate, GenerateRequest, GenerationResult } from '../engine/generate';
+import { asBetType, generate, GenerateRequest, GenerationResult } from '../engine/generate';
 import { FatalPipelineError } from '../stages/news/newsAgent';
 import { canGenerate, charge, createUser, findByKey, User } from './accounts';
 import { asLang, MSG } from '../i18n';
@@ -19,7 +19,7 @@ import { asLang, MSG } from '../i18n';
  *   GET  /v1/health                  status, leagues ready
  *   GET  /v1/me                      the caller's free / paid generations, plans
  *   GET  /v1/leagues                 leagues the models cover
- *   POST /v1/generate                start a generation -> { jobId }
+ *   POST /v1/generate                start a generation (betType simple | combo) -> { jobId }
  *   GET  /v1/jobs/:id                progress log and, when done, the tickets
  *   GET  /v1/history                 the caller's recent generations
  *   POST /admin/users                (X-Admin-Token) create a user -> access key
@@ -140,6 +140,7 @@ const server = http.createServer(async (req, res) => {
       const b = await body(req);
       const request: GenerateRequest = {
         tickets: Number(b.tickets ?? settings.tickets.defaultTickets), matches: Number(b.matches ?? settings.tickets.defaultMatches),
+        betType: asBetType(b.betType),
         minOdds: b.minOdds != null ? Number(b.minOdds) : undefined, maxOdds: b.maxOdds != null ? Number(b.maxOdds) : undefined,
         maxLegs: b.maxLegs != null ? Number(b.maxLegs) : undefined, windowHours: b.windowHours != null ? Number(b.windowHours) : undefined,
         leagues: Array.isArray(b.leagues) ? b.leagues.map(String).slice(0, 60) : [],

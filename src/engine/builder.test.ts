@@ -36,6 +36,20 @@ describe('builder', () => {
     }
   });
 
+  it('simple bets: exactly one selection per match, inside the odds band', () => {
+    // As generate() does for simple bets: every selection in range, not just the likeliest 40.
+    const single = { ...opts, minLegs: 1, maxLegs: 1, maxCandidateLegs: Number.MAX_SAFE_INTEGER };
+    const singles = candidates(sim, catalogue('Home FC', 'Away FC'), available, single);
+    for (const [lo, hi] of [[1.25, 1.46], [1.46, 1.71], [1.71, 2]]) {
+      const [b] = buildBest(sim, singles, { ...single, minOdds: lo, maxOdds: hi });
+      expect(b).toBeDefined();
+      expect(b.legs.length).toBe(1);
+      expect(b.fairOdds).toBeGreaterThanOrEqual(lo - 1e-9);
+      expect(b.fairOdds).toBeLessThanOrEqual(hi + 1e-9);
+      expect(b.probability).toBeCloseTo(b.legs[0].probability, 12);
+    }
+  });
+
   it('reads the joint probability from the simulation, not the product of the legs', () => {
     const [b] = buildBest(sim, pool, opts);
     const product = b.legs.reduce((a, l) => a * l.probability, 1);

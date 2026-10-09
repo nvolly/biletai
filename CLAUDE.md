@@ -7,9 +7,16 @@ records **what was decided and why**. Read it before changing anything.
 
 The name is **BiletAI**, final (owner, 2026-10-09; "BiletIA" was considered and rejected).
 
-An app for the **Romanian public** that generates football tickets with AI. Each match on a
-ticket gets a combination of 2–4 selections (a "builder"), with its **probability** and
-**cotă corectă** (fair odds = 1 / model probability), plus a short explanation in Romanian.
+An app for the **Romanian public** that generates football tickets with AI. **Football only**
+(owner, 2026-10-09: no other sports). Two bet types (owner, 2026-10-09):
+
+- **Simplu** (EN "Single"): one selection per match.
+- **Combinat** (EN "Combo"): 2–4 selections on the same match (a "builder" in the code). The
+  name is our own on purpose; don't use bookmaker product names such as "Bet Builder".
+
+Each match shows its **probability** and **cotă corectă** (fair odds = 1 / model probability),
+plus a short explanation. The ticket's **cotă corectă totală** is the match odds cumulated
+(multiplied), and the app shows that product (e.g. `1.25 × 1.46 × 1.71 = 3.12`).
 
 - **Platforms:** desktop (Windows first), **Android** and **iOS**, and a website that presents
   the app and links to Google Play, the App Store and the desktop download.
@@ -155,7 +162,7 @@ Status:
 | `npm run server` | API server only (port 8787) |
 | `npm run desktop` | The Electron desktop app (start the server first) |
 | `npm run desktop:dist` | Build the Windows installer into `desktop/dist/` |
-| `npm run generate -- 2 5 [--no-ai]` | Generate from the terminal |
+| `npm run generate -- 2 5 [--simple] [--no-ai]` | Generate from the terminal (`--simple` = one selection per match) |
 | `npm run user -- add <email> [credits]` | Create a user and print the access key once (`credit`, `key`, `list` also exist) |
 | `npm test` | Unit tests (models, simulation, builder) |
 

@@ -163,8 +163,10 @@ export async function explainBuilder(input: {
   const language = input.lang === 'ro' ? 'ROMANIAN (natural, simple, with correct diacritics)' : 'ENGLISH (natural and simple)';
   try {
     const parsed = await structured(ExplanationSchema,
-      `Football match: ${input.match}. A statistical model suggests this combination of selections ` +
-        `(market names are ${input.lang === 'ro' ? 'Romanian' : 'English'}), which all have to happen together ` +
+      `Football match: ${input.match}. A statistical model suggests ` +
+        (input.legs.length === 1 ? 'this selection ' : 'this combination of selections ') +
+        `(market names are ${input.lang === 'ro' ? 'Romanian' : 'English'})` +
+        (input.legs.length === 1 ? ' ' : ', which all have to happen together ') +
         `(model probability ${(input.probability * 100).toFixed(1)}%):\n` +
         input.legs.map((l) => `- ${l.market}: ${l.pick} (${(l.probability * 100).toFixed(0)}% on its own)`).join('\n') +
         `\n\nTeam news: ${input.news ? JSON.stringify(input.news) : 'unavailable'}\n\n` +

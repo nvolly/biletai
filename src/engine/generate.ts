@@ -13,8 +13,11 @@ import { Fixture, FixtureSource, footballDataFixtures } from './fixtures';
 import { Lang, MSG, reason } from '../i18n';
 
 /**
- * One generation: N tickets of M matches, each match a builder (2-4 selections on that
- * match) with fair odds in the requested band.
+ * One generation: N tickets of M matches. Two bet types:
+ *   - simple: one selection per match;
+ *   - combo ("Combinat" in the app): a builder of 2-4 selections on that match.
+ * Either way each match's fair odds fall in the requested band, and the ticket's odds are
+ * cumulated over its matches.
  *
  *   fixtures -> models (+ market blend for goals) -> 20,000 simulated matches
  *   -> best builder per match in each odds band (free, seconds)
@@ -25,10 +28,14 @@ import { Lang, MSG, reason } from '../i18n';
  * products over its matches. Within a match, selections are never multiplied: the joint
  * probability comes from the simulation.
  */
+export type BetType = 'simple' | 'combo';
+export const asBetType = (v: unknown): BetType => (v === 'simple' ? 'simple' : 'combo');
+
 export interface GenerateRequest {
   tickets: number;
   matches: number;           // per ticket
-  minOdds?: number;          // per builder (fair odds)
+  betType?: BetType;         // default combo
+  minOdds?: number;          // per match (fair odds of its selection or builder)
   maxOdds?: number;
   maxLegs?: number;
   windowHours?: number;
@@ -97,12 +104,14 @@ function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [n
 
 export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log = () => {}, source: FixtureSource = footballDataFixtures): Promise<GenerationResult> {
   const t = settings.tickets, b = settings.builder;
+  const betType = asBetType(req.betType);
   const request = {
     tickets: Math.min(Math.max(1, Math.floor(req.tickets)), t.maxTickets),
     matches: Math.min(Math.max(1, Math.floor(req.matches)), t.maxMatches),
+    betType,
     minOdds: req.minOdds ?? b.minOdds,
     maxOdds: req.maxOdds ?? b.maxOdds,
-    maxLegs: Math.min(Math.max(b.minLegs, req.maxLegs ?? b.maxLegs), 5),
+    maxLegs: betType === 'simple' ? 1 : Math.min(Math.max(b.minLegs, req.maxLegs ?? b.maxLegs), 5),
     windowHours: Math.min(req.windowHours ?? t.windowHours, 240),
     leagues: req.leagues ?? [],
     ai: (req.ai ?? true) && settings.ai.enabled,
@@ -113,7 +122,12 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
   const log: string[] = [];
   const say: Log = (l) => { log.push(l); onLog(l); };
   const needed = request.tickets * request.matches;
-  const opts: BuilderOptions = { ...b, maxLegs: request.maxLegs, minOdds: request.minOdds, maxOdds: request.maxOdds };
+  // A single selection is already the final pick, so simple bets search every selection in
+  // the range; capping at the likeliest few would leave the higher odds bands empty.
+  const opts: BuilderOptions = {
+    ...b, minLegs: betType === 'simple' ? 1 : b.minLegs, maxLegs: request.maxLegs, minOdds: request.minOdds, maxOdds: request.maxOdds,
+    maxCandidateLegs: betType === 'simple' ? Number.MAX_SAFE_INTEGER : b.maxCandidateLegs,
+  };
   const bandList = bands(request.minOdds, request.maxOdds);
 
   let fixtures = (await source.upcoming(request.windowHours)).filter((f) => bank.leagues.has(f.league));
@@ -125,7 +139,7 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
     const p = prepare(bank, f, opts, bandList, request.lang);
     if (typeof p === 'string') logger.debug(p); else prepared.push(p);
   }
-  say(T.withCombo(prepared.length, request.minOdds, request.maxOdds));
+  say((betType === 'simple' ? T.withPick : T.withCombo)(prepared.length, request.minOdds, request.maxOdds));
 
   // Spread the builders over the odds bands; fall back to any band the match has.
   const pick = (p: Prepared, k: number): Builder => p.byBand[k % 3] ?? p.byBand.find(Boolean)!;

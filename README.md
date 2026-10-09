@@ -21,9 +21,9 @@ The engine (`src/`):
 | Models | Dixon-Coles goals + corner, card, shot and shots-on-target count models, trained on 3 seasons per league, time-decayed | `stages/poisson/` |
 | Market blend | Expected goals mixed 25% model / 75% the market average (from the backtest) | `engine/generate.ts` |
 | Simulation | 20,000 simulated matches with a Gaussian copula, so combinations get a **joint** probability | `stages/poisson/simulate.ts` |
-| Builders | Best combination of 2-4 selections per match in an odds band; fair odds = 1 / probability | `engine/catalogue.ts`, `engine/builder.ts` |
+| Selections | Per match, by bet type: **Simplu** = the best single selection, **Combinat** = the best combination of 2-4 selections; either in an odds band, fair odds = 1 / probability | `engine/catalogue.ts`, `engine/builder.ts` |
 | AI | DeepSeek web-searched team news; TypeSafe Jev drops risky matches and checks each builder against the news; a short explanation | `stages/news/`, `stages/jev/` |
-| Tickets | Matches dealt round-robin over the tickets; ticket probability and fair odds are the products over its independent matches | `engine/generate.ts` |
+| Tickets | Matches dealt round-robin over the tickets; ticket probability and fair odds are cumulated (multiplied) over its independent matches | `engine/generate.ts` |
 
 ## Run it locally
 
@@ -36,7 +36,7 @@ npm run app                        # starts the server and opens the desktop UI
 
 Other commands:
 - `npm run server`: the API server only (port 8787).
-- `npm run generate -- 2 5 [--no-ai]`: generate from the terminal.
+- `npm run generate -- 2 5 [--simple] [--no-ai]`: generate from the terminal.
 - `npm run user -- list | credit <email> <n> | key <email>`: user admin on the server.
 - `npm test`: runs the tests.
 
@@ -63,7 +63,7 @@ All `/v1` calls need `Authorization: Bearer <access key>`.
 | `GET /v1/health` | Status, number of leagues ready |
 | `GET /v1/me` | Free and paid generations left, plans |
 | `GET /v1/leagues` | Leagues the models cover |
-| `POST /v1/generate` | `{tickets, matches, minOdds, maxOdds, maxLegs, windowHours, leagues}` → `{jobId}` |
+| `POST /v1/generate` | `{tickets, matches, betType: "simple" \| "combo", minOdds, maxOdds, maxLegs, windowHours, leagues}` → `{jobId}` |
 | `GET /v1/jobs/:id` | Progress log; when done, the tickets |
 | `GET /v1/history` | The caller's recent generations |
 | `POST /admin/users` | Header `X-Admin-Token`; creates a user and returns its access key |
