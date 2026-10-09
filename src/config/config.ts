@@ -57,9 +57,7 @@ const jevSchema = z.object({
   dropIfHighRisk: z.number().min(0).max(1).default(0.5),
   dropIfLowInfo: z.number().min(0).max(1).default(0.6),
   dropIfRotation: z.number().min(0).max(1).default(0.7),
-  playerMaxShift: z.number().min(0).max(0.5).default(0.1),
   riskDownweight: z.number().min(0).max(1).default(0.15),
-  playerCorrelation: z.number().min(0).max(0.95).default(0.5),
   minSlipConsistency: z.number().min(0).max(1).default(0.5),
 });
 
@@ -76,7 +74,7 @@ const settingsSchema = z.object({
   model: modelSchema.default({ seasons: 3, decayPerDay: 0.0019, shrinkage: 4, simulations: 20000, maxStaleDays: 14, modelWeight: 0.25 }),
   jev: jevSchema.default({
     model: 'jev-latest', dropIfKeyPlayerMissing: 0.97, keyPlayerDownweight: 0.05, dropIfHighRisk: 0.5, dropIfLowInfo: 0.6,
-    dropIfRotation: 0.7, playerMaxShift: 0.1, riskDownweight: 0.15, playerCorrelation: 0.5, minSlipConsistency: 0.5,
+    dropIfRotation: 0.7, riskDownweight: 0.15, minSlipConsistency: 0.5,
   }),
   news: newsSchema.default({ maxSearches: 2, cacheHours: 36 }),
   // AI stages (news + Jev). Off = statistical models only (free, no API keys needed).

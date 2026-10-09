@@ -33,8 +33,6 @@ jev:
   dropIfLowInfo: 0.6
   dropIfHighRisk: 0.5
   riskDownweight: 0.15
-  playerMaxShift: 0.1
-  playerCorrelation: 0.5
   minSlipConsistency: 0.5
 
 news:
