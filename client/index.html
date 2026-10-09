@@ -105,6 +105,20 @@
   .betType { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .betType .seg button { font-size: 13px; padding: 5px 14px; }
   .tag { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .tag.ok { background: color-mix(in srgb, var(--accent-2) 22%, transparent); color: var(--ok); }
+  .tag.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+  .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .ticket.filling [data-fill] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .clockCol { display: flex; flex-direction: column; align-items: center; }
+  .fillNote, .yours, .cmp, .chk, .yourTotal { display: none; }
+  .ticket.filling .fillNote { display: block; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .ticket.filling .chk { display: block; margin-top: 8px; width: 20px; height: 20px; accent-color: var(--accent-2); cursor: pointer; }
+  .ticket.filling .yours { display: block; margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+  .yours input { display: block; width: 78px; margin: 2px 0 0 auto; padding: 4px 7px; border-radius: 7px; border: 1px solid var(--line); background: var(--field); text-align: right; }
+  .ticket.filling .cmp { display: block; font-size: 11.5px; font-weight: 650; margin-top: 3px; }
+  .cmp.up { color: var(--ok); } .cmp.down { color: var(--bad); }
+  .match.added > :not(.clockCol) { opacity: .5; }
+  .yourTotal.show { display: block; padding: 10px 16px; border-top: 1px solid var(--line); font-weight: 650; }
   .cumul { padding: 7px 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 </style>
 </head>
@@ -192,6 +206,15 @@ const T = {
     betType: 'Tip de pariu', simple: 'Simplu', combo: 'Combinat',
     simpleHint: 'o selecție pe meci', comboHint: '2–4 selecții pe același meci',
     total: 'cotă corectă totală', cumulated: 'Cote cumulate',
+    fillMode: 'Mod completare', image: 'Imagine', addedOne: 'Adăugat',
+    fillHint: 'Bifează fiecare selecție pe măsură ce o adaugi în aplicația ta și scrie cota primită, ca s-o compari cu cota corectă.',
+    cmpNote: 'Peste cota corectă = un preț mai bun decât estimează modelul. Nu garantează câștigul.',
+    added: (k, n) => `${k}/${n} adăugate`, yourOdds: 'Cota ta',
+    vsFair: (d) => `${d >= 0 ? '+' : ''}${d}% față de cota corectă`,
+    yourTotal: (o, f, d) => `Cota ta totală ${o} · cotă corectă totală ${f} · ${d >= 0 ? '+' : ''}${d}%`,
+    imageDone: 'Imaginea biletului a fost copiată și salvată.',
+    cardFooter: 'Doar 18+. Predicții statistice, fără garanții: orice meci se poate termina altfel. Joacă responsabil.',
+    matchWon: 'Selecțiile au ieșit', matchLost: 'Nu a ieșit', ticketWon: 'Bilet ieșit', ticketLost: 'Bilet neieșit',
     emptyHtml: 'Alege setările și apasă <b>Generează bilete</b>.<br><b>Simplu</b>: o selecție pe meci. <b>Combinat</b>: 2–4 selecții pe același meci.<br>Cotele meciurilor se cumulează în <b>cota corectă totală</b> a biletului, alături de <b>probabilitate</b>.',
     footerHtml: '<b>Doar pentru persoane peste 18 ani.</b> BiletAI oferă predicții statistice, nu garanții: orice meci se poate termina altfel. Cota corectă = 1 / probabilitatea calculată de model; compar-o cu ce ți se oferă. Joacă responsabil și doar cât îți permiți să pierzi.',
     left: (n, free) => (n === 1 ? '1 generare rămasă' : `${n} generări rămase`) + (free ? ` · ${free} gratuite` : ''),
@@ -214,6 +237,15 @@ const T = {
     betType: 'Bet type', simple: 'Single', combo: 'Combo',
     simpleHint: 'one selection per match', comboHint: '2–4 selections on the same match',
     total: 'total fair odds', cumulated: 'Cumulated odds',
+    fillMode: 'Fill-in mode', image: 'Image', addedOne: 'Added',
+    fillHint: 'Tick each selection as you add it in your app, and type the odds you got to compare them with the fair odds.',
+    cmpNote: 'Above fair odds = a better price than the model estimates. It does not guarantee a win.',
+    added: (k, n) => `${k}/${n} added`, yourOdds: 'Your odds',
+    vsFair: (d) => `${d >= 0 ? '+' : ''}${d}% vs fair odds`,
+    yourTotal: (o, f, d) => `Your total odds ${o} · total fair odds ${f} · ${d >= 0 ? '+' : ''}${d}%`,
+    imageDone: 'Ticket image copied and saved.',
+    cardFooter: '18+ only. Statistical predictions, no guarantees: any match can go either way. Play responsibly.',
+    matchWon: 'The selections came in', matchLost: 'Did not come in', ticketWon: 'Ticket won', ticketLost: 'Ticket lost',
     emptyHtml: 'Choose your settings and press <b>Generate tickets</b>.<br><b>Single</b>: one selection per match. <b>Combo</b>: 2–4 selections on the same match.<br>The match odds multiply into the ticket\'s <b>total fair odds</b>, shown with its <b>probability</b>.',
     footerHtml: '<b>18+ only.</b> BiletAI provides statistical predictions, not guarantees: any match can go either way. Fair odds = 1 / the model\'s probability; compare them with what you are offered. Play responsibly and only what you can afford to lose.',
     left: (n, free) => (n === 1 ? '1 generation left' : `${n} generations left`) + (free ? ` · ${free} free` : ''),
@@ -382,6 +414,129 @@ function feedStop() {
   $('runTitle').textContent = t().analysis;
 }
 
+// ---- results on the scoreboard clock (filled in by the server's results tracker) ----
+function clock(m) {
+  if (!m.result) return `<div class="clock">${clockTime(m.fixture.kickoff)}</div>`;
+  const cls = m.result.won === true ? ' won' : m.result.won === false ? ' lost' : '';
+  return `<div class="clock${cls}" title="${m.result.won === true ? t().matchWon : m.result.won === false ? t().matchLost : ''}">${esc(m.result.score)}</div>`;
+}
+const statusTag = (tk) => (tk.status === 'won' ? `<span class="tag ok">${t().ticketWon}</span>` : tk.status === 'lost' ? `<span class="tag bad">${t().ticketLost}</span>` : '');
+
+// ---- fill-in mode: tick each selection as it's added elsewhere, compare the odds offered ----
+function wireTicket(el, result, tk, type) {
+  const key = `biletai.fill.${result.id || result.createdAt}.${tk.index}`;
+  let st; try { st = JSON.parse(store.get(key) || '{}'); } catch { st = {}; }
+  st.done = st.done || {}; st.odds = st.odds || {};
+  const save = () => store.set(key, JSON.stringify(st));
+  const update = () => {
+    const on = el.classList.contains('filling');
+    let k = 0, all = true, prod = 1;
+    el.querySelectorAll('.match').forEach((row, i) => {
+      const m = tk.matches[i], fx = row.dataset.fx, cmp = row.querySelector('.cmp');
+      if (st.done[fx]) k++;
+      row.classList.toggle('added', on && !!st.done[fx]);
+      const o = Number(st.odds[fx]);
+      if (o > 1) {
+        const d = Math.round((o / m.fairOdds - 1) * 100);
+        cmp.textContent = t().vsFair(d); cmp.className = 'cmp ' + (d >= 0 ? 'up' : 'down'); prod *= o;
+      } else { cmp.textContent = ''; all = false; }
+    });
+    el.querySelector('.fillProg').textContent = on ? t().added(k, tk.matches.length) : '';
+    const tot = el.querySelector('.yourTotal');
+    tot.classList.toggle('show', on && all);
+    if (on && all) tot.textContent = t().yourTotal(prod.toFixed(2), tk.fairOdds.toFixed(2), Math.round((prod / tk.fairOdds - 1) * 100));
+  };
+  el.querySelectorAll('.match').forEach((row) => {
+    const fx = row.dataset.fx, chk = row.querySelector('.chk'), inp = row.querySelector('.yours input');
+    chk.checked = !!st.done[fx];
+    if (st.odds[fx]) inp.value = st.odds[fx];
+    chk.onchange = () => { st.done[fx] = chk.checked; save(); update(); };
+    inp.oninput = () => { st.odds[fx] = inp.value; save(); update(); };
+  });
+  if (st.on) el.classList.add('filling');
+  el.querySelector('[data-fill]').onclick = () => { st.on = el.classList.toggle('filling'); save(); update(); };
+  el.querySelector('[data-img]').onclick = () => shareCard(tk, type);
+  update();
+}
+
+// ---- share card: the ticket as an image, with the 18+ / no-guarantees line built in ----
+function drawCard(tk, type) {
+  const W = 1080, P = 60, C = { bg: '#0e1020', panel: '#171a2e', ink: '#e9ebf6', muted: '#9aa1bd', line: '#262a44', accent: '#5b5bf7', green: '#34d399' };
+  const font = (w, s) => `${w} ${s}px system-ui, "Segoe UI", sans-serif`;
+  const probe = document.createElement('canvas').getContext('2d');
+  const wrap = (text, f, max) => {
+    probe.font = f;
+    const out = []; let cur = '';
+    for (const w of text.split(' ')) { const next = cur ? cur + ' ' + w : w; if (probe.measureText(next).width > max && cur) { out.push(cur); cur = w; } else cur = next; }
+    return cur ? [...out, cur] : out;
+  };
+  const textW = W - 2 * P - 200;
+  const rows = tk.matches.map((m) => ({ m, picks: m.legs.flatMap((l) => wrap(`${l.market}: ${l.pick}`, font(500, 27), textW)) }));
+  const footLines = wrap(`${t().cumulated}: ${cumulLine(tk)}`, font(500, 24), W - 2 * P);
+  const disc = wrap(t().cardFooter, font(500, 21), W - 2 * P);
+  const H = 250 + rows.reduce((a, r) => a + 124 + r.picks.length * 38, 0) + 60 + footLines.length * 34 + 130 + disc.length * 30 + 20;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  // Pitch lines, like the app header.
+  g.strokeStyle = 'rgba(52, 211, 153, .10)'; g.lineWidth = 3;
+  g.beginPath(); g.arc(W - 170, 120, 90, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.moveTo(W - 170, 0); g.lineTo(W - 170, 240); g.stroke();
+  // Logo with the ball.
+  g.fillStyle = C.accent; g.beginPath(); g.roundRect(P, P, 76, 76, 20); g.fill();
+  g.fillStyle = '#fff'; g.font = font(800, 44); g.textAlign = 'center'; g.fillText('B', P + 36, P + 54);
+  g.beginPath(); g.arc(P + 68, P + 68, 15, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); g.strokeStyle = C.green; g.lineWidth = 4; g.stroke();
+  g.fillStyle = '#161a2b'; g.beginPath();
+  [[0, -7], [6.7, -2.2], [4.1, 5.7], [-4.1, 5.7], [-6.7, -2.2]].forEach(([x, y], i) => (i ? g.lineTo : g.moveTo).call(g, P + 68 + x, P + 68 + y)); g.fill();
+  g.textAlign = 'left'; g.fillStyle = C.ink; g.font = font(800, 46); g.fillText('Bilet', P + 104, P + 52);
+  const bw = g.measureText('Bilet').width; g.fillStyle = C.accent; g.fillText('AI', P + 104 + bw, P + 52);
+  g.fillStyle = C.muted; g.font = font(500, 23); g.fillText(t().tagline, P + 106, P + 86);
+  // Ticket title and type tag.
+  let y = 220;
+  g.fillStyle = C.ink; g.font = font(750, 36); const title = `${t().ticket} ${tk.index}`; g.fillText(title, P, y);
+  let x = P + g.measureText(title).width + 20;
+  g.font = font(700, 23); const tag = t()[type]; const tw = g.measureText(tag).width + 28;
+  g.fillStyle = 'rgba(91, 91, 247, .22)'; g.beginPath(); g.roundRect(x, y - 30, tw, 40, 20); g.fill();
+  g.fillStyle = '#8f8ffb'; g.fillText(tag, x + 14, y - 2);
+  g.fillStyle = C.muted; g.font = font(500, 24); g.fillText(`${tk.matches.length} ${t().matches}`, x + tw + 18, y - 2);
+  y += 30;
+  for (const { m, picks } of rows) {
+    const h = 104 + picks.length * 38;
+    g.fillStyle = C.panel; g.beginPath(); g.roundRect(P, y, W - 2 * P, h, 18); g.fill();
+    g.fillStyle = C.muted; g.font = font(500, 22); g.fillText(`${when(m.fixture.kickoff)} · ${m.fixture.leagueName}`, P + 26, y + 38);
+    g.fillStyle = C.ink; g.font = font(750, 30); g.fillText(`${m.fixture.home} – ${m.fixture.away}`, P + 26, y + 76);
+    g.font = font(500, 27); g.fillStyle = '#c9cde2';
+    picks.forEach((line, i) => g.fillText(line, P + 26, y + 116 + i * 38));
+    g.textAlign = 'right'; g.fillStyle = C.ink; g.font = font(800, 38); g.fillText(m.fairOdds.toFixed(2), W - P - 26, y + 62);
+    g.fillStyle = C.muted; g.font = font(500, 22); g.fillText(pct(m.adjusted), W - P - 26, y + 94); g.textAlign = 'left';
+    y += h + 20;
+  }
+  y += 24;
+  g.fillStyle = C.muted; g.font = font(500, 24); footLines.forEach((l) => { g.fillText(l, P, y); y += 34; });
+  y += 50;
+  g.fillStyle = C.ink; g.font = font(600, 30); g.fillText(t().total[0].toUpperCase() + t().total.slice(1), P, y);
+  g.font = font(800, 54); g.fillStyle = C.green; const tot = tk.fairOdds.toFixed(2); g.textAlign = 'right'; g.fillText(tot, W - P, y + 6); g.textAlign = 'left';
+  g.fillStyle = C.muted; g.font = font(500, 26); g.fillText(`${t().chance[0].toUpperCase() + t().chance.slice(1)} ${pct(tk.probability)}`, P, y + 42);
+  y += 100;
+  g.strokeStyle = C.line; g.lineWidth = 2; g.beginPath(); g.moveTo(P, y - 34); g.lineTo(W - P, y - 34); g.stroke();
+  g.fillStyle = C.muted; g.font = font(500, 21); disc.forEach((l) => { g.fillText(l, P, y); y += 30; });
+  return cv;
+}
+
+async function shareCard(tk, type) {
+  const blob = await new Promise((r) => drawCard(tk, type).toBlob(r, 'image/png'));
+  const file = new File([blob], `biletai-bilet-${tk.index}.png`, { type: 'image/png' });
+  // Phones get the system share sheet (WhatsApp, Instagram...); elsewhere copy + save.
+  if (/Android|iPhone|iPad/i.test(navigator.userAgent) && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'BiletAI' }); return; } catch {}
+  }
+  try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); } catch {}
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  say(t().imageDone, 'ok');
+}
+
 /** Tickets are shown in the language they were generated in (the AI wrote them that way). */
 function render(result, { animate = false } = {}) {
   LAST = result;
@@ -389,24 +544,32 @@ function render(result, { animate = false } = {}) {
   const note = result.found < result.needed ? `<div class="card hint">${t().short(result.found, result.needed)}</div>` : '';
   const type = typeOf(result);
   $('results').innerHTML = note + result.tickets.map((tk) => `
-    <div class="ticket">
-      <div class="thead"><b>${t().ticket} ${tk.index}</b><span class="tag">${t()[type]}</span><span class="stat">${tk.matches.length} ${t().matches}</span><div class="spacer"></div>
+    <div class="ticket" data-ti="${tk.index}">
+      <div class="thead"><b>${t().ticket} ${tk.index}</b><span class="tag">${t()[type]}</span><span class="stat">${tk.matches.length} ${t().matches}</span>${statusTag(tk)}<div class="spacer"></div>
         <span class="stat">${t().chance} <strong>${pct(tk.probability)}</strong></span><span class="stat">${t().total} <strong>${tk.fairOdds.toFixed(2)}</strong></span>
         <button class="btn small" data-copy="${tk.index}">${t().copy}</button></div>
       ${tk.matches.length > 1 ? `<div class="cumul">${t().cumulated}: ${cumulLine(tk)}</div>` : ''}
+      <div class="tools">
+        <button class="btn small" data-fill>${t().fillMode}</button><button class="btn small" data-img>${t().image}</button>
+        <span class="fillProg hint"></span>
+      </div>
+      <div class="fillNote hint">${t().fillHint}<br>${t().cmpNote}</div>
       ${tk.matches.map((m) => `
-        <div class="match">
-          <div class="clock">${clockTime(m.fixture.kickoff)}</div>
+        <div class="match" data-fx="${esc(m.fixture.id)}">
+          <div class="clockCol">${clock(m)}<input type="checkbox" class="chk" title="${t().addedOne}"></div>
           <div><div class="teams">${esc(m.fixture.home)} – ${esc(m.fixture.away)}</div>
             <div class="meta">${esc(country(m.fixture.country))} · ${esc(m.fixture.leagueName)} · ${when(m.fixture.kickoff)}</div></div>
-          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p">${pct(m.adjusted)}</div></div>
+          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p">${pct(m.adjusted)}</div>
+            <label class="yours">${t().yourOdds}<input type="number" min="1.01" step="0.01" inputmode="decimal"></label><div class="cmp"></div></div>
           <div class="legs">${m.legs.map((l) => `<span class="leg">${esc(l.market)}: <b>${esc(l.pick)}</b> <em>${pct(l.probability)}</em></span>`).join('')}</div>
           ${m.explanation ? `<div class="why">${esc(m.explanation)}</div>` : ''}
         </div>`).join('')}
+      <div class="yourTotal"></div>
     </div>`).join('');
   document.querySelectorAll('[data-copy]').forEach((b) => b.onclick = () => {
     navigator.clipboard.writeText(ticketText(result.tickets[Number(b.dataset.copy) - 1], type)).then(() => say(t().copied, 'ok'));
   });
+  document.querySelectorAll('#results .ticket').forEach((el) => wireTicket(el, result, result.tickets[Number(el.dataset.ti) - 1], type));
   // A fresh ticket: the explanations type themselves in, all at once.
   if (animate) document.querySelectorAll('#results .why').forEach((el) => { const text = el.textContent; el.textContent = ''; typeText(el, text, 1600); });
 }
