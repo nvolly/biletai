@@ -27,8 +27,6 @@ export interface Simulation {
   gh: Int16Array; ga: Int16Array;     // full-time goals
   gh1: Int16Array; ga1: Int16Array;   // first-half goals
   counts: Partial<Record<StatKey, [Int16Array, Int16Array]>>;
-  /** The latent normal per variable; player legs couple to these. */
-  z: Float32Array[];
   seed: number;
 }
 
@@ -52,7 +50,6 @@ export function simulate(model: FixtureModel, chol: number[][], n: number, seed:
     n, seed,
     gh: new Int16Array(n), ga: new Int16Array(n), gh1: new Int16Array(n), ga1: new Int16Array(n),
     counts: {},
-    z: SIM_VARS.map(() => new Float32Array(n)),
   };
   for (const stat of Object.keys(model.counts) as StatKey[]) sim.counts[stat] = [new Int16Array(n), new Int16Array(n)];
 
@@ -64,7 +61,6 @@ export function simulate(model: FixtureModel, chol: number[][], n: number, seed:
       let acc = 0;
       for (let k = 0; k <= i; k++) acc += chol[i][k] * e[k];
       z[i] = acc;
-      sim.z[i][s] = acc;
     }
 
     const h = quantileFromTable(rowTotals, normCdf(z[VAR_INDEX.goalsH]));
