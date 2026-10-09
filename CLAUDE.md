@@ -5,6 +5,8 @@ records **what was decided and why**. Read it before changing anything.
 
 ## What BiletAI is
 
+The name is **BiletAI**, final (owner, 2026-10-09; "BiletIA" was considered and rejected).
+
 An app for the **Romanian public** that generates football tickets with AI. Each match on a
 ticket gets a combination of 2–4 selections (a "builder"), with its **probability** and
 **cotă corectă** (fair odds = 1 / model probability), plus a short explanation in Romanian.
