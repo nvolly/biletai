@@ -5,3 +5,5 @@ desktop/dist/
 .env
 .chrome-app/
 *.log
+.aider*
+Modelfile
