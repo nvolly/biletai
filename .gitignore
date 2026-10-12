@@ -1,6 +1,7 @@
 node_modules/
 logs/
 /data/
+/backups/
 desktop/dist/
 .env
 .chrome-app/
