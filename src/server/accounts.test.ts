@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { JsonUserStore, User } from './accounts';
+import { JsonUserStore, openUserStore, User } from './accounts';
 
 const makeUser = (over: Partial<User> = {}): User => ({
   id: 'u1', email: 'a@b.ro', keyHash: 'hash-u1', freeLeft: 1, credits: 0, used: 0,
@@ -66,5 +66,37 @@ describe('JsonUserStore (in a temporary folder)', () => {
     store.save([makeUser()]);
     expect(fs.existsSync(`${file}.tmp`)).toBe(false);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toHaveLength(1);
+  });
+});
+
+describe('openUserStore (settings.server.userStore)', () => {
+  let dir: string;
+  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+
+  it('returns the JSON store for "json"', () => {
+    dir = fs.mkdtempSync(`${os.tmpdir()}/biletai-users-`);
+    const s = openUserStore('json', dir);
+    expect(s).toBeInstanceOf(JsonUserStore);
+    s.save([makeUser()]);
+    expect(fs.existsSync(path.join(dir, 'users.json'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'users.db'))).toBe(false);
+    cleanup();
+  });
+
+  it('returns a working SQLite store for "sqlite"', () => {
+    dir = fs.mkdtempSync(`${os.tmpdir()}/biletai-users-`);
+    const s = openUserStore('sqlite', dir);
+    expect(s).not.toBeInstanceOf(JsonUserStore);
+    expect(fs.existsSync(path.join(dir, 'users.db'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'users.json'))).toBe(false);
+    s.save([makeUser()]);
+    expect(s.all()).toHaveLength(1);
+    expect(s.findByEmail('a@b.ro')?.id).toBe('u1');
+    expect(s.findById('u1')?.email).toBe('a@b.ro');
+    expect(s.findByKeyHash('hash-u1')?.email).toBe('a@b.ro');
+    s.save([makeUser({ id: 'u2', email: 'c@d.ro', keyHash: 'hash-u2' })]);
+    expect(s.all()).toHaveLength(1);
+    expect(s.findByEmail('a@b.ro')).toBeNull();
+    cleanup();
   });
 });

@@ -100,7 +100,8 @@ const settingsSchema = z.object({
     port: z.number().int().positive().default(8787),
     freeGenerations: z.number().int().nonnegative().default(2),
     freeQuestions: z.number().int().nonnegative().default(3),   // per free generation
-  }).default({ port: 8787, freeGenerations: 2, freeQuestions: 3 }),
+    userStore: z.enum(['json', 'sqlite']).default('json'),
+  }).default({ port: 8787, freeGenerations: 2, freeQuestions: 3, userStore: 'json' }),
   plans: z.array(planSchema).default([]),
   costs: costsSchema.default({ deepseekInputPerM: 0.3, deepseekCachedInputPerM: 0.006, deepseekOutputPerM: 1.2, webSearchEach: 0, jevInputPerM: 0.042, usdToRon: 4.5 }),
 });

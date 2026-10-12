@@ -4,10 +4,10 @@ import { createHash, randomBytes } from 'crypto';
 import { paths, settings } from '../config/config';
 
 /**
- * Users and their generation credits. Storage is an implementation of `UserStore`;
- * today that is JSON on one file on the server (data/users.json). Access keys are shown
- * once at creation and stored only as SHA-256 hashes, so a leaked users.json does not leak
- * working keys.
+ * Users and their generation credits. Storage is an implementation of `UserStore`, chosen
+ * by `settings.server.userStore`: "json" (a file on the server, data/users.json, the
+ * default) or "sqlite" (data/users.db). Access keys are shown once at creation and
+ * stored only as SHA-256 hashes, so a leaked store does not leak working keys.
  *
  * Billing is not wired yet: credits are granted by the admin (npm run user) until the
  * payment provider and the legal checks are settled.
@@ -35,6 +35,58 @@ export interface UserStore {
   findById(id: string): User | null;
   findByKeyHash(keyHash: string): User | null;
   findByEmail(email: string): User | null;
+}
+
+/**
+ * The SQLite implementation: users in one table of `data/users.db`. The same "replace the
+ * whole list on save" contract as the JSON store, inside one transaction. Only created when
+ * `settings.server.userStore` is "sqlite"; the better-sqlite3 module is loaded on demand,
+ * so "json" deployments never load it.
+ */
+export class SqliteUserStore implements UserStore {
+  private db: any; // avoid `require` in the "json" deployment path
+
+  constructor(private readonly file: string) {
+    // better-sqlite3 is CJS, so require keeps tsc from adding a package.json "type" field.
+    const Database: any = require('better-sqlite3');
+    this.db = new Database(file);
+    this.db.pragma('journal_mode = WAL');
+    this.db.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  }
+
+  private rows(): User[] {
+    return this.db.prepare('SELECT json FROM users').all().map((r: any) => JSON.parse(r.json));
+  }
+
+  all(): User[] {
+    return this.rows();
+  }
+
+  save(users: User[]) {
+    const tx = this.db.transaction((xs: User[]) => {
+      this.db.prepare('DELETE FROM users').run();
+      const ins = this.db.prepare('INSERT INTO users (id, json) VALUES (?, ?)');
+      for (const u of xs) ins.run(u.id, JSON.stringify(u));
+    });
+    tx(users); // a crash inside the transaction rolls back: no half-written list
+  }
+
+  findById(id: string): User | null {
+    return this.rows().find((u) => u.id === id) ?? null;
+  }
+
+  findByKeyHash(keyHash: string): User | null {
+    return this.rows().find((u) => u.keyHash === keyHash) ?? null;
+  }
+
+  findByEmail(email: string): User | null {
+    return this.rows().find((u) => u.email === email) ?? null;
+  }
+}
+
+/** The store to open from the `server.userStore` setting ("json" | "sqlite"). */
+export function openUserStore(kind: 'json' | 'sqlite', dir: string): UserStore {
+  return kind === 'sqlite' ? new SqliteUserStore(path.join(dir, 'users.db')) : new JsonUserStore(path.join(dir, 'users.json'));
 }
 
 /** The JSON-file implementation: one array of users, atomically replaced on save. */
@@ -65,7 +117,7 @@ export class JsonUserStore implements UserStore {
 }
 
 /** The live store, used by the account functions below. */
-export const store: UserStore = new JsonUserStore(path.join(paths.data, 'users.json'));
+export const store: UserStore = openUserStore(settings.server.userStore, paths.data);
 
 const addMonths = (iso: string, n: number) => { const d = new Date(iso); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString(); };
 export const planById = (id: string) => settings.plans.find((p) => p.id === id);
