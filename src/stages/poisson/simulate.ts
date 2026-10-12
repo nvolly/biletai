@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { join, dirname } from 'node:path';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { buildSync } from 'esbuild';
+import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { runSimulation, WorkerFixtureModel } from './simulateWorker';
 import { StatKey } from './history';
 
@@ -48,35 +48,23 @@ interface WorkerReply {
 }
 
 /**
- * Bundle the worker into a self-contained CommonJS .js so it can start under the stock
- * Node loader (no tsx needed inside the worker thread). Recompiles only when the source
- * or one of its imports changes; the cache lives in the module's own directory.
+ * Build the worker bundle (esbuild, see buildWorker.ts) into a self-contained CommonJS
+ * .js so it can start under the stock Node loader (no tsx inside the worker thread).
+ * The pretest/prebuild npm scripts build it on every checkout; this call only covers a
+ * run that skipped them, so the simulation never blocks or crashes because of it.
  */
+let bundled: string | null = null;
+
 function workerScriptPath(): string {
-  const src = join(__dirname, 'simulateWorker.ts');
+  if (bundled && existsSync(bundled)) return bundled;
   const out = join(__dirname, 'simulateWorker.bundle.js');
-  const stamp = join(__dirname, 'simulateWorker.bundle.stamp');
-  const sources = [
-    src,
-    join(__dirname, 'dixonColes.ts'),
-    join(__dirname, 'distributions.ts'),
-    join(__dirname, 'copula.ts'),
-  ].map((p) => readFileSync(p, 'utf8')).join('\n---\n');
-  try {
-    if (readFileSync(stamp, 'utf8') === sources) return out;
-  } catch { /* missing or stale, compile below */ }
-  mkdirSync(__dirname, { recursive: true });
-  buildSync({
-    entryPoints: [src],
-    outfile: out,
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node22',
-    sourcemap: false,
-    logLevel: 'silent',
-  });
-  writeFileSync(stamp, sources);
+  if (existsSync(out)) { bundled = out; return out; }
+  const script = spawnSync(process.execPath, [
+    join(__dirname, 'node_modules/tsx/dist/cli.mjs'),
+    join(__dirname, 'buildWorker.ts'),
+  ], { stdio: 'pipe' });
+  if (script.status !== 0 || !existsSync(out)) throw new Error(`worker bundle build failed: ${script.stderr.toString()}`);
+  bundled = out;
   return out;
 }
 

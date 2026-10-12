@@ -4,6 +4,8 @@
   "description": "BiletAI - AI football ticket generator: statistical models + AI news analysis, served from a private API server",
   "private": true,
   "scripts": {
+    "prebuild": "tsx src/stages/poisson/buildWorker.ts",
+    "pretest": "tsx src/stages/poisson/buildWorker.ts",
     "server": "tsx src/server/server.ts",
     "app": "tsx src/server/server.ts --open",
     "generate": "tsx src/engine/cli.ts",
