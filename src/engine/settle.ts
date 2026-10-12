@@ -78,10 +78,80 @@ export function settleGeneration(g: GenerationResult, lookup: (m: TicketMatch) =
 }
 
 interface Bucket { from: number; to: number; n: number; predicted: number; won: number }
+
+/**
+ * The calibration table: for each probability bucket, how often picks in it actually won
+ * (`actual`) versus the probability shown to the user (`predicted`), and how many picks it
+ * contains (`n`). These are exactly the settle buckets below, so the app's "Rezultate reale"
+ * and the backtest report judge the same ranges.
+ */
+export interface CalibrationRow {
+  from: number;
+  to: number;
+  label: string;      // "50–60%"
+  n: number;
+  predicted: number;  // mean shown probability of picks in the bucket
+  actual: number;      // win rate of picks in the bucket (won / n), 0 when n = 0
+}
+
+/** The bucket edges the whole project shares: a pick with shown probability p lands in
+ *  the bucket whose from <= p < to. Edges above 1 (1.0001) cap the top bucket at 1. */
+export const CALIBRATION_EDGES = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0001];
+
+/** The index into `CALIBRATION_EDGES` of the bucket containing p, or -1 outside the ranges. */
+export function bucketIndexFor(p: number): number {
+  for (let i = 0; i < CALIBRATION_EDGES.length - 1; i++) {
+    if (p >= CALIBRATION_EDGES[i] && p < CALIBRATION_EDGES[i + 1]) return i;
+  }
+  return -1;
+}
+
+/**
+ * A bucket being filled with running totals (count, sum of shown probabilities, wins);
+ * `finishCalibration` turns it into the reported `CalibrationRow`.
+ */
+export interface CalibrationAccum { from: number; to: number; label: string; n: number; sumP: number; won: number }
+
+/** Fresh, zeroed buckets, in the same order and labels `formatCalibration` prints them under. */
+export function makeCalibrationBuckets(): CalibrationAccum[] {
+  return CALIBRATION_EDGES.slice(0, -1).map((from, i) => {
+    const to = Math.min(1, CALIBRATION_EDGES[i + 1]);
+    return { from, to, label: `${Math.round(from * 100)}–${Math.round(to * 100)}%`, n: 0, sumP: 0, won: 0 };
+  });
+}
+
+/** Add one settled pick (shown probability p, did it win) to its running bucket, if it has one. */
+export function addCalibration(accum: CalibrationAccum[] | null | undefined, p: number, won: boolean): void {
+  const b = accum?.[bucketIndexFor(p)];
+  if (!b) return;
+  b.n++;
+  b.sumP += p;
+  if (won) b.won++;
+}
+
+/** Turn filled bucket accumulators into the reported calibration table. */
+export function finishCalibration(accum: CalibrationAccum[]): CalibrationRow[] {
+  return accum.map((r) => ({
+    from: r.from, to: r.to, label: r.label, n: r.n,
+    predicted: r.n ? r.sumP / r.n : 0,
+    actual: r.n ? r.won / r.n : 0,
+  }));
+}
+
+/** The calibration table as text, e.g. shown under the backtest totals. */
+export function formatCalibration(rows: CalibrationRow[]): string {
+  let out = 'calibration (predicted vs actual, by shown probability bucket)\n';
+  for (const r of rows) {
+    out += `  ${r.label.padEnd(8)} n=${String(r.n).padStart(4)}  predicted=${(r.predicted * 100).toFixed(0).padStart(3)}%  actual=${(r.actual * 100).toFixed(0).padStart(3)}%\n`;
+  }
+  return out;
+}
+
 export interface TrackRecord {
   updatedAt: string;
   matches: { n: number; won: number; predicted: number };          // predicted = mean shown probability
   buckets: Bucket[];
+  calibration: CalibrationRow[];                                   // predicted vs actual hit rate per bucket
   byType: Record<'simple' | 'combo', { n: number; won: number; predicted: number }>;
   tickets: { n: number; won: number; predicted: number };
 }
@@ -97,8 +167,9 @@ const generationFiles = () => {
  * (`adjusted`, after Jev). The same pick on many users' tickets counts once.
  */
 export function trackRecord(gens: GenerationResult[]): TrackRecord {
-  const edges = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0001];
+  const edges = CALIBRATION_EDGES;
   const buckets: Bucket[] = edges.slice(0, -1).map((from, i) => ({ from, to: Math.min(1, edges[i + 1]), n: 0, predicted: 0, won: 0 }));
+  const calibration = makeCalibrationBuckets();
   const all = { n: 0, won: 0, predicted: 0 };
   const byType = { simple: { n: 0, won: 0, predicted: 0 }, combo: { n: 0, won: 0, predicted: 0 } };
   const tickets = { n: 0, won: 0, predicted: 0 };
@@ -118,13 +189,15 @@ export function trackRecord(gens: GenerationResult[]): TrackRecord {
         add(byType[type], p, m.result.won);
         const b = buckets.find((x) => p >= x.from && p < x.to);
         if (b) add(b, p, m.result.won);
+        addCalibration(calibration, p, m.result.won);
       }
     }
   }
   const mean = <T extends { n: number; predicted: number }>(s: T) => ({ ...s, predicted: s.n ? s.predicted / s.n : 0 });
   return {
     updatedAt: new Date().toISOString(),
-    matches: mean(all), buckets: buckets.map(mean), byType: { simple: mean(byType.simple), combo: mean(byType.combo) }, tickets: mean(tickets),
+    matches: mean(all), buckets: buckets.map(mean), calibration: finishCalibration(calibration),
+    byType: { simple: mean(byType.simple), combo: mean(byType.combo) }, tickets: mean(tickets),
   };
 }
 
