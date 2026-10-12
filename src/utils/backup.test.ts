@@ -1,10 +1,11 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { backupData } from './backup';
 
 describe('data backup', () => {
-  const tmp = fs.mkdtempSync(path.join('/tmp/opencode', 'biletai-backup-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'biletai-backup-'));
   const dataDir = path.join(tmp, 'data');
   const backupsDir = path.join(tmp, 'backups');
   const run = (at: string, maxBackups?: number) =>
@@ -20,7 +21,7 @@ describe('data backup', () => {
   });
 
   it('refreshes the same day, and removes the oldest day beyond 14', () => {
-    const tmp2 = fs.mkdtempSync(path.join('/tmp/opencode', 'biletai-backup-'));
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'biletai-backup-'));
     const data2 = path.join(tmp2, 'data');
     const backups2 = path.join(tmp2, 'backups');
     const run2 = (at: string) => backupData({ dataDir: data2, backupsDir: backups2, maxBackups: 14, now: new Date(`${at}T00:00:00Z`) });
