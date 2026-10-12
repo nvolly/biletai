@@ -101,7 +101,8 @@ const settingsSchema = z.object({
     freeGenerations: z.number().int().nonnegative().default(2),
     freeQuestions: z.number().int().nonnegative().default(3),   // per free generation
     userStore: z.enum(['json', 'sqlite']).default('json'),      // where accounts are stored (data/users.json or data/users.db)
-  }).default({ port: 8787, freeGenerations: 2, freeQuestions: 3, userStore: 'json' }),
+    helpUrl: z.string().default('https://biletai.ro/ajutor'),   // support link shown in pause messages and other help pointers
+  }).default({ port: 8787, freeGenerations: 2, freeQuestions: 3, userStore: 'json', helpUrl: 'https://biletai.ro/ajutor' }),
   plans: z.array(planSchema).default([]),
   costs: costsSchema.default({ deepseekInputPerM: 0.3, deepseekCachedInputPerM: 0.006, deepseekOutputPerM: 1.2, webSearchEach: 0, jevInputPerM: 0.042, usdToRon: 4.5 }),
 });
