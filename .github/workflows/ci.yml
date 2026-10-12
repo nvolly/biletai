@@ -40,7 +40,8 @@ jobs:
         run: |
           set -e
           # BiletAI must never name or link a bookmaker (CLAUDE.md, legal position)
-          if grep -RInE -i "superbet|betano|casa pariurilor|fortuna|unibet|betfair|netbet|mozzart|maxbet|winbet|stanleybet|vlad cazino|getsbet" \
+          # (test files are skipped: a test may list the names it checks the app never shows)
+          if grep -RInE -i --exclude="*.test.ts" "superbet|betano|casa pariurilor|fortuna|unibet|betfair|netbet|mozzart|maxbet|winbet|stanleybet|vlad cazino|getsbet" \
                src client desktop/main.js desktop/preload.js 2>/dev/null; then
             echo "::error::Bookmaker name found in the app code"; exit 1
           fi

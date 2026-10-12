@@ -2,13 +2,28 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { JsonUserStore, SqliteUserStore, User, createUserStore, USERS_DB_FILE } from './accounts';
+import { JsonUserStore, SqliteUserStore, User, createUserStore, canGenerate, isPaused, pause, unpause, currentStore, setStore, USERS_DB_FILE } from './accounts';
 import { migrateUsers } from './migrate';
 import { settings } from '../config/config';
 
 const makeUser = (over: Partial<User> = {}): User => ({
   id: 'u1', email: 'a@b.ro', keyHash: 'hash-u1', freeLeft: 1, credits: 0, used: 0,
   createdAt: '2026-01-01T00:00:00.000Z', ...over,
+});
+
+// The live store is constructed at import time against data/ (gitignored, off-limits to
+// tests). These tests swap it for a store in a temp folder and restore it afterwards.
+let tmpDir: string;
+const savedStore = currentStore();
+
+beforeEach(() => {
+  tmpDir = fs.mkdtempSync(`${os.tmpdir()}/biletai-pause-`);
+  setStore(new JsonUserStore(path.join(tmpDir, 'users.json')));
+});
+
+afterEach(() => {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  setStore(savedStore);
 });
 
 const plan = { id: 'pro', periodStart: '2026-09-01T00:00:00.000Z', until: '2026-10-01T00:00:00.000Z', used: 3 };
@@ -191,5 +206,54 @@ describe('createUserStore (picks the store by server.userStore)', () => {
     created.save([makeUser()]);
     expect(fs.existsSync(USERS_DB_FILE)).toBe(true);
     expect(new SqliteUserStore(USERS_DB_FILE).findByEmail('a@b.ro')?.id).toBe('u1');
+  });
+});
+
+describe('self-pause (store in a temp folder)', () => {
+  const now = new Date('2026-10-10T12:00:00.000Z');
+
+  it('rejects lengths other than 1, 7 or 30 days', () => {
+    currentStore().save([makeUser()]);
+    expect(() => pause('a@b.ro', 2)).toThrow(/1, 7 or 30/);
+    expect(() => pause('a@b.ro', 0)).toThrow(/1, 7 or 30/);
+    expect(() => pause('a@b.ro', 31)).toThrow(/1, 7 or 30/);
+  });
+
+  it('rejects an unknown user', () => {
+    expect(() => pause('nobody@nope.ro', 1)).toThrow(/no such user/);
+    expect(() => unpause('nobody@nope.ro')).toThrow(/no such user/);
+  });
+
+  it('sets the pause end the right number of days ahead', () => {
+    currentStore().save([makeUser()]);
+    expect(pause('a@b.ro', 1, now).pausedUntil).toBe('2026-10-11T12:00:00.000Z');
+    currentStore().save([makeUser()]);
+    expect(pause('a@b.ro', 7, now).pausedUntil).toBe('2026-10-17T12:00:00.000Z');
+    currentStore().save([makeUser()]);
+    expect(pause('a@b.ro', 30, now).pausedUntil).toBe('2026-11-09T12:00:00.000Z');
+    // the value is what the endpoint reads back
+    expect(currentStore().findByEmail('a@b.ro')!.pausedUntil).toBe('2026-11-09T12:00:00.000Z');
+  });
+
+  it('reports a pause as active only before its end date', () => {
+    currentStore().save([makeUser({ pausedUntil: '2026-10-21T12:00:00.000Z' })]);
+    const u = currentStore().findByEmail('a@b.ro')!;
+    expect(isPaused(u, new Date('2026-10-10'))).toBe(true);
+    expect(isPaused(u, new Date('2026-10-21T12:00:00.000Z'))).toBe(false);
+    expect(isPaused(u, new Date('2026-10-22'))).toBe(false);
+    expect(isPaused(makeUser(), new Date('2026-10-10'))).toBe(false);
+  });
+
+  it('a pause blocks generations even while credits remain, and lifts on its own after', () => {
+    currentStore().save([makeUser({ freeLeft: 1, pausedUntil: '2026-10-21T12:00:00.000Z' })]);
+    const u = currentStore().findByEmail('a@b.ro')!;
+    expect(canGenerate(u, new Date('2026-10-10'))).toBe(false);
+    expect(canGenerate(u, new Date('2026-10-22'))).toBe(true);
+  });
+
+  it('unpause clears the date, and a past pause does not block', () => {
+    currentStore().save([makeUser({ pausedUntil: '2026-10-01T00:00:00.000Z' })]);
+    expect(unpause('a@b.ro').pausedUntil).toBeUndefined();
+    expect(isPaused(currentStore().findByEmail('a@b.ro')!, new Date('2026-10-10'))).toBe(false);
   });
 });
