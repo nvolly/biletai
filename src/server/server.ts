@@ -19,7 +19,7 @@ import { asLang, MSG } from '../i18n';
  * BiletAI API server. Holds the AI keys (environment only) and runs every generation;
  * the apps only send parameters and read results, so no key ever ships to a customer.
  *
- *   GET  /v1/health                  status, leagues ready
+ *   GET  /v1/health                  { status: 'ok', queued, running }, no authentication
  *   GET  /demo                       (public) a real settled ticket + the plans, for visitors
  *   GET  /v1/me                      the caller's free / plan / top-up generations, plans
  *   GET  /v1/leagues                 leagues the models cover
@@ -43,8 +43,6 @@ async function refreshBank() {
   try { bank = await buildModelBank(); } catch (e: any) { logger.error(`model bank failed: ${e?.message ?? e}`); return; }
   try { settleAll(bank); } catch (e: any) { logger.error(`results tracker failed: ${e?.message ?? e}`); }
 }
-refreshBank();
-setInterval(refreshBank, 12 * 3600_000).unref();
 
 // ---- jobs ----
 interface Job {
@@ -54,6 +52,9 @@ interface Job {
 const jobs = new Map<string, Job>();
 const queue: Job[] = [];
 let busy = false;
+
+/** Public status for load monitors: no authentication, no user data. */
+export const health = () => ({ status: 'ok' as const, queued: queue.length, running: busy });
 
 function historyDir(userId: string) {
   const d = path.join(paths.data, 'generations', userId);
@@ -163,7 +164,7 @@ const publicUser = (u: User) => {
   };
 };
 
-const server = http.createServer(async (req, res) => {
+export const handler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
   // The app sends its language with every call; errors and generated text follow it.
@@ -177,7 +178,8 @@ const server = http.createServer(async (req, res) => {
     // Public, before sign-in: the demo ticket and the plans, so a visitor sees what they'd get.
     if (req.method === 'GET' && p === '/demo') return send(res, 200, { generation: demoGeneration(), plans: publicPlans(), freeGenerations: settings.server.freeGenerations });
     if (req.method === 'GET' && p === '/v1/health') {
-      return send(res, 200, { ok: true, ready: !!bank, leagues: bank?.leagues.size ?? 0, ai: settings.ai.enabled });
+      // Public, no user data: a load monitor only.
+      return send(res, 200, health());
     }
     if (req.method === 'GET' && p === '/v1/leagues') {
       return send(res, 200, LEAGUES.filter((l) => bank?.leagues.has(l.code)).map((l) => ({ code: l.code, name: l.name, country: l.country, stats: l.kind === 'main' })));
@@ -274,23 +276,32 @@ const server = http.createServer(async (req, res) => {
   } catch (e: any) {
     send(res, 500, { error: e?.message ?? String(e) });
   }
-});
+};
 
-// A generation keeps the event loop busy for ~15 s of simulation. With Node's 5 s default the
-// idle-socket timer fires right after, and clients polling on a kept-alive connection get
-// ECONNRESET. A longer keep-alive avoids that (moving generation to a worker thread is on the
-// to-do list).
-server.keepAliveTimeout = 65_000;
-server.headersTimeout = 66_000;
+// Only start the server and the 12h model refresh when the file is run directly
+// (`npm run server` / `npm run app`); when imported (tests) nothing listens.
+const isMain = process.argv[1] ? require('path').resolve(process.argv[1]) === require('path').resolve(__filename) : false;
+if (isMain) {
+  refreshBank();
+  setInterval(refreshBank, 12 * 3600_000).unref();
 
-server.listen(PORT, () => {
-  const url = `http://127.0.0.1:${PORT}`;
-  console.log(`\n  BiletAI server on ${url}\n`);
-  if (process.argv.includes('--open')) {
-    // Development: open the desktop UI in a Chrome app window.
-    const chrome = ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA']
-      .map((v) => process.env[v] && path.join(process.env[v]!, 'Google', 'Chrome', 'Application', 'chrome.exe'))
-      .find((pth) => pth && fs.existsSync(pth));
-    if (chrome) spawn(chrome, [`--app=${url}`, `--user-data-dir=${path.join(paths.root, '.chrome-app')}`, '--window-size=1200,900'], { detached: true, stdio: 'ignore' }).unref();
-  }
-});
+  const server = http.createServer(handler);
+  // A generation keeps the event loop busy for ~15 s of simulation. With Node's 5 s default the
+  // idle-socket timer fires right after, and clients polling on a kept-alive connection get
+  // ECONNRESET. A longer keep-alive avoids that (moving generation to a worker thread is on the
+  // to-do list).
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+
+  server.listen(PORT, () => {
+    const url = `http://127.0.0.1:${PORT}`;
+    console.log(`\n  BiletAI server on ${url}\n`);
+    if (process.argv.includes('--open')) {
+      // Development: open the desktop UI in a Chrome app window.
+      const chrome = ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA']
+        .map((v) => process.env[v] && path.join(process.env[v]!, 'Google', 'Chrome', 'Application', 'chrome.exe'))
+        .find((pth) => pth && fs.existsSync(pth));
+      if (chrome) spawn(chrome, [`--app=${url}`, `--user-data-dir=${path.join(paths.root, '.chrome-app')}`, '--window-size=1200,900'], { detached: true, stdio: 'ignore' }).unref();
+    }
+  });
+}
