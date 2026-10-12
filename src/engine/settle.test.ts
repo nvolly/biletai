@@ -10,7 +10,7 @@ const record: MatchRecord = {
 };
 const fixture = { id: 'E0|Arsenal|Leeds', league: 'E0', leagueName: 'Premier League', country: 'England', home: 'Arsenal', away: 'Leeds', kickoff: '2026-10-10T11:30:00.000Z' };
 const leg = (id: string) => ({ id, family: id.split('.')[0], market: id, pick: id, probability: 0.7 });
-const match = (ids: string[], adjusted = 0.75): TicketMatch => ({ fixture, legs: ids.map(leg), probability: adjusted, adjusted, fairOdds: 1 / adjusted });
+const match = (ids: string[], adjusted = 0.75): TicketMatch => ({ fixture, legs: ids.map(leg), probability: adjusted, adjusted, fairOdds: 1 / adjusted, dataQuality: 'good' });
 
 describe('results tracker', () => {
   it('settles each selection with the catalogue test that priced it', () => {

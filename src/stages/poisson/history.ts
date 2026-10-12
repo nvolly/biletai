@@ -146,3 +146,34 @@ export function staleDays(records: MatchRecord[], now = new Date()): number {
   const last = records[records.length - 1].date;
   return Math.floor((now.getTime() - Date.parse(`${last}T00:00:00Z`)) / 86400_000);
 }
+
+export type DataQuality = 'good' | 'fair' | 'limited';
+
+export interface TeamDataQuality {
+  /** Matches this team has in the history window (what the models trained on). */
+  matches: number;
+  /** Days since the team's most recent result. */
+  daysSinceLast: number;
+}
+
+// A team counts as having plenty of history when it appears in at least this many matches.
+const THICK_HISTORY = 10;
+
+/**
+ * Data-quality level of one match.
+ *  "good"    - both teams are within `maxStaleDays` of their last result and both have
+ *              at least THICK_HISTORY matches of history;
+ *  "fair"    - both teams are within `maxStaleDays` but one (or both) has thinner history;
+ *  "limited" - at least one team has played longer than `maxStaleDays` ago.
+ */
+export function dataQuality(
+  home: TeamDataQuality,
+  away: TeamDataQuality,
+  maxStaleDays: number,
+): DataQuality {
+  const fresh = (t: TeamDataQuality) => t.daysSinceLast <= maxStaleDays;
+  const thick = (t: TeamDataQuality) => t.matches >= THICK_HISTORY;
+  if (fresh(home) && fresh(away) && thick(home) && thick(away)) return 'good';
+  if (fresh(home) && fresh(away)) return 'fair';
+  return 'limited';
+}

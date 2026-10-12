@@ -6,6 +6,7 @@ import { CountModel, expectedCounts, fitCountModel, FitOptions } from './countMo
 import { fitGoalsModel, GoalsModel } from './dixonColes';
 import { cholesky, estimateCorrelation, Expected, identity, SIM_VARS, STAT_VARS } from './copula';
 import { FixtureModel } from './simulate';
+import { DataQuality, dataQuality, TeamDataQuality } from './history';
 
 export interface LeagueModels {
   def: LeagueDef;
@@ -81,8 +82,27 @@ export async function buildModelBank(codes: string[] = LEAGUES.map((l) => l.code
 }
 
 export type ResolvedFixture =
-  | { ok: true; model: FixtureModel; modelled: ('goals' | StatKey)[] }
+  | { ok: true; model: FixtureModel; modelled: ('goals' | StatKey)[]; quality: DataQuality }
   | { ok: false; reason: string };
+
+// The newest match a team played (in or out), or null when it has no results in the window.
+function lastPlayed(records: MatchRecord[], team: string): MatchRecord | null {
+  for (let i = records.length - 1; i >= 0; i--) {
+    const r = records[i];
+    if (r.home === team || r.away === team) return r;
+  }
+  return null;
+}
+
+/** Per-team data quality for a fixture, from the league's history. */
+export function teamData(lm: LeagueModels, team: string, asOf: Date): TeamDataQuality {
+  const matches = lm.goals.teams[team]?.matches ?? 0;
+  const last = lastPlayed(lm.records, team);
+  const daysSinceLast = last
+    ? Math.floor((asOf.getTime() - Date.parse(`${last.date}T00:00:00Z`)) / 86400_000)
+    : Infinity;
+  return { matches, daysSinceLast };
+}
 
 /**
  * Expected counts for one fixture. Fixtures come from the same data source as the history,
@@ -104,5 +124,6 @@ export function modelFor(bank: ModelBank, league: string, home: string, away: st
     model.counts[stat] = { lh: c[0], la: c[1], dispersion: m.dispersion };
     modelled.push(stat);
   }
-  return { ok: true, model, modelled };
+  const quality = dataQuality(teamData(lm, home, bank.asOf), teamData(lm, away, bank.asOf), settings.model.maxStaleDays);
+  return { ok: true, model, modelled, quality };
 }
