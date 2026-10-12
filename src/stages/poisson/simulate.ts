@@ -1,7 +1,9 @@
+import { Worker } from 'node:worker_threads';
+import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { buildSync } from 'esbuild';
+import { runSimulation, WorkerFixtureModel } from './simulateWorker';
 import { StatKey } from './history';
-import { scoreMatrix } from './dixonColes';
-import { countTable, gaussian, normCdf, quantileFromTable, rng } from './distributions';
-import { SIM_VARS, STAT_VARS, VAR_INDEX, SimVar } from './copula';
 
 /**
  * Monte Carlo over whole matches, so legs priced by DIFFERENT models (goals, corners,
@@ -16,6 +18,10 @@ import { SIM_VARS, STAT_VARS, VAR_INDEX, SimVar } from './copula';
  * Goals are drawn from the Dixon-Coles matrix itself (home from the row sums, away from
  * the chosen row), which reproduces the matrix exactly; the copula keeps home/away goals
  * mutually uncorrelated for that reason and only ties them to the other stats.
+ *
+ * The 20,000-run loop lives in simulateWorker.ts and is executed in a worker thread
+ * (`simulateAsync`), so a generation no longer blocks the HTTP server. `simulate` runs
+ * the same loop in the calling thread and stays available (e.g. in tests).
  */
 export interface FixtureModel {
   goals: { lh: number; la: number; rho: number; firstHalfShare: number };
@@ -30,55 +36,91 @@ export interface Simulation {
   seed: number;
 }
 
-const MAX_COUNT: Record<StatKey, number> = { shots: 60, sot: 30, corners: 30, cards: 20, reds: 6 };
-
 export function simulate(model: FixtureModel, chol: number[][], n: number, seed: number): Simulation {
-  const rand = rng(seed);
-  const d = SIM_VARS.length;
-  const matrix = scoreMatrix(model.goals.lh, model.goals.la, model.goals.rho);
-  const rowTotals = matrix.map((r) => r.reduce((a, b) => a + b, 0));
-  const condRows = matrix.map((r, i) => r.map((x) => (rowTotals[i] > 0 ? x / rowTotals[i] : 0)));
+  return runSimulation(model as WorkerFixtureModel, chol, n, seed);
+}
 
-  const tables: Partial<Record<SimVar, Float64Array>> = {};
-  for (const [stat, m] of Object.entries(model.counts) as [StatKey, { lh: number; la: number; dispersion: number }][]) {
-    const [vh, va] = STAT_VARS[stat];
-    tables[vh] = countTable(m.lh, m.dispersion, MAX_COUNT[stat]);
-    tables[va] = countTable(m.la, m.dispersion, MAX_COUNT[stat]);
-  }
+interface WorkerReply {
+  n: number; seed: number;
+  gh: Int16Array; ga: Int16Array; gh1: Int16Array; ga1: Int16Array;
+  counts?: Partial<Record<StatKey, [Int16Array, Int16Array]>>;
+  err?: string;
+}
 
-  const sim: Simulation = {
-    n, seed,
-    gh: new Int16Array(n), ga: new Int16Array(n), gh1: new Int16Array(n), ga1: new Int16Array(n),
-    counts: {},
+/**
+ * Bundle the worker into a self-contained CommonJS .js so it can start under the stock
+ * Node loader (no tsx needed inside the worker thread). Recompiles only when the source
+ * or one of its imports changes; the cache lives in the module's own directory.
+ */
+function workerScriptPath(): string {
+  const src = join(__dirname, 'simulateWorker.ts');
+  const out = join(__dirname, 'simulateWorker.bundle.js');
+  const stamp = join(__dirname, 'simulateWorker.bundle.stamp');
+  const sources = [
+    src,
+    join(__dirname, 'dixonColes.ts'),
+    join(__dirname, 'distributions.ts'),
+    join(__dirname, 'copula.ts'),
+  ].map((p) => readFileSync(p, 'utf8')).join('\n---\n');
+  try {
+    if (readFileSync(stamp, 'utf8') === sources) return out;
+  } catch { /* missing or stale, compile below */ }
+  mkdirSync(__dirname, { recursive: true });
+  buildSync({
+    entryPoints: [src],
+    outfile: out,
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node22',
+    sourcemap: false,
+    logLevel: 'silent',
+  });
+  writeFileSync(stamp, sources);
+  return out;
+}
+
+/** Single-flight queue: at most one simulation in the worker at a time. */
+let worker: Worker | null = null;
+let workerReady: Promise<Worker> | null = null;
+let tail: Promise<unknown> = Promise.resolve();
+
+function getWorker(): Promise<Worker> {
+  if (worker || workerReady) return (workerReady as Promise<Worker>);
+  workerReady = new Promise<Worker>((resolve, reject) => {
+    let settled = false;
+    const fail = (err: Error): void => { if (!settled) { settled = true; workerReady = null; reject(err); } else if (worker) { worker = null; workerReady = null; } };
+    try {
+      const w = new Worker(workerScriptPath());
+      w.unref();
+      w.once('online', () => { if (!settled) { settled = true; worker = w; resolve(w); } });
+      w.once('error', fail);
+      w.on('exit', () => { if (worker === w) { worker = null; workerReady = null; } });
+    } catch (err) {
+      fail(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+  return workerReady;
+}
+
+/** Same inputs and seed as {@link simulate}, but the loop runs in a worker thread. */
+export async function simulateAsync(model: FixtureModel, chol: number[][], n: number, seed: number): Promise<Simulation> {
+  const step = async (): Promise<Simulation> => {
+    const w = await getWorker();
+    return new Promise<Simulation>((resolve, reject) => {
+      const onMessage = (msg: WorkerReply): void => {
+        w.off('message', onMessage);
+        if (msg.err !== undefined) reject(new Error(msg.err));
+        else resolve({ n: msg.n, seed: msg.seed, gh: msg.gh, ga: msg.ga, gh1: msg.gh1, ga1: msg.ga1, counts: msg.counts ?? {} });
+      };
+      w.on('message', onMessage);
+      w.once('error', (err: Error) => reject(err));
+      w.postMessage({ model, chol, n, seed });
+    });
   };
-  for (const stat of Object.keys(model.counts) as StatKey[]) sim.counts[stat] = [new Int16Array(n), new Int16Array(n)];
-
-  const e = new Float64Array(d), z = new Float64Array(d);
-  const share = model.goals.firstHalfShare;
-  for (let s = 0; s < n; s++) {
-    for (let i = 0; i < d; i++) e[i] = gaussian(rand);
-    for (let i = 0; i < d; i++) {
-      let acc = 0;
-      for (let k = 0; k <= i; k++) acc += chol[i][k] * e[k];
-      z[i] = acc;
-    }
-
-    const h = quantileFromTable(rowTotals, normCdf(z[VAR_INDEX.goalsH]));
-    const a = quantileFromTable(condRows[h], normCdf(z[VAR_INDEX.goalsA]));
-    sim.gh[s] = h; sim.ga[s] = a;
-    // Each goal independently falls in the first half with the league's measured share.
-    let h1 = 0, a1 = 0;
-    for (let g = 0; g < h; g++) if (rand() < share) h1++;
-    for (let g = 0; g < a; g++) if (rand() < share) a1++;
-    sim.gh1[s] = h1; sim.ga1[s] = a1;
-
-    for (const stat of Object.keys(sim.counts) as StatKey[]) {
-      const [vh, va] = STAT_VARS[stat];
-      sim.counts[stat]![0][s] = quantileFromTable(tables[vh]!, normCdf(z[VAR_INDEX[vh]]));
-      sim.counts[stat]![1][s] = quantileFromTable(tables[va]!, normCdf(z[VAR_INDEX[va]]));
-    }
-  }
-  return sim;
+  const p = tail.then(step, step);
+  tail = p.catch(() => {});
+  return p;
 }
 
 export type Outcome = Uint8Array;

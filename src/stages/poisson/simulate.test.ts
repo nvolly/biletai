@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@jest/globals';
-import { simulate, jointProbability, probability, Outcome } from './simulate';
+import { describe, it, expect, afterEach } from '@jest/globals';
+import { simulate, simulateAsync, jointProbability, probability, Outcome } from './simulate';
 import { cholesky, identity, nearestCorrelation, VAR_INDEX, SIM_VARS } from './copula';
 import { scoreMatrix } from './dixonColes';
 import { jointProb, pred } from './markets';
@@ -73,4 +73,24 @@ describe('correlation across models', () => {
     const j = jointProbability(legs);
     for (const l of legs) expect(j).toBeLessThanOrEqual(probability(l));
   });
+});
+
+describe('worker-thread simulation', () => {
+  afterEach(async () => { jest.restoreAllMocks(); });
+
+  it('returns the same result as a direct call for the same seed', async () => {
+    const N = 5000;
+    const direct = simulate(model, cholesky(identity(SIM_VARS.length)), N, 123);
+    const viaWorker = await simulateAsync(model, cholesky(identity(SIM_VARS.length)), N, 123);
+    expect(viaWorker.n).toBe(direct.n);
+    expect(viaWorker.seed).toBe(direct.seed);
+    expect(Array.from(viaWorker.gh)).toEqual(Array.from(direct.gh));
+    expect(Array.from(viaWorker.ga)).toEqual(Array.from(direct.ga));
+    expect(Array.from(viaWorker.gh1)).toEqual(Array.from(direct.gh1));
+    expect(Array.from(viaWorker.ga1)).toEqual(Array.from(direct.ga1));
+    for (const stat of Object.keys(model.counts) as (keyof typeof model.counts)[]) {
+      expect(Array.from(viaWorker.counts[stat]![0])).toEqual(Array.from(direct.counts[stat]![0]));
+      expect(Array.from(viaWorker.counts[stat]![1])).toEqual(Array.from(direct.counts[stat]![1]));
+    }
+  }, 60000);
 });

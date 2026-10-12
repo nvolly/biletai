@@ -7,3 +7,5 @@ desktop/dist/
 *.log
 .aider*
 Modelfile
+src/stages/poisson/simulateWorker.bundle.js
+src/stages/poisson/simulateWorker.bundle.stamp

@@ -1,0 +1,447 @@
+import { parentPort, isMainThread, Transferable } from 'node:worker_threads';
+import { StatKey } from './history';
+import { scoreMatrix } from './dixonColes';
+import { countTable, gaussian, normCdf, quantileFromTable, rng } from './distributions';
+import { SIM_VARS, STAT_VARS, VAR_INDEX } from './copula';
+
+export interface WorkerFixtureModel {
+  goals: { lh: number; la: number; rho: number; firstHalfShare: number };
+  counts: Partial<Record<StatKey, { lh: number; la: number; dispersion: number }>>;
+}
+
+/**
+ * The heavy loop of the match simulation, run in a worker thread so the HTTP server
+ * stays responsive. Must produce bit-identical results to the same input and seed —
+ * it is the only place in the codebase that draws from the seeded PRNG.
+ *
+ * Every array in the result owns exactly one backing ArrayBuffer, so the whole result
+ * can be shipped back to the main thread by transferring those buffers (no copy).
+ */
+export function runSimulation(model: WorkerFixtureModel, chol: number[][], n: number, seed: number) {
+  const rand = rng(seed);
+  const d = SIM_VARS.length;
+  const matrix = scoreMatrix(model.goals.lh, model.goals.la, model.goals.rho);
+  const rowTotals = matrix.map((r) => r.reduce((a, b) => a + b, 0));
+  const condRows = matrix.map((r, i) => r.map((x) => (rowTotals[i] > 0 ? x / rowTotals[i] : 0)));
+
+  const MAX_COUNT: Record<StatKey, number> = { shots: 60, sot: 30, corners: 30, cards: 20, reds: 6 };
+  const tables: Record<string, Float64Array> = {};
+  for (const [stat, m] of Object.entries(model.counts) as [StatKey, { lh: number; la: number; dispersion: number }][]) {
+    const [vh, va] = STAT_VARS[stat];
+    tables[vh] = countTable(m.lh, m.dispersion, MAX_COUNT[stat]);
+    tables[va] = countTable(m.la, m.dispersion, MAX_COUNT[stat]);
+  }
+
+  const stats = Object.keys(model.counts) as StatKey[];
+  const sim = {
+    n, seed,
+    gh: new Int16Array(n), ga: new Int16Array(n), gh1: new Int16Array(n), ga1: new Int16Array(n),
+    counts: Object.fromEntries(stats.map((s) => [s, [new Int16Array(n), new Int16Array(n)]])) as Partial<Record<StatKey, [Int16Array, Int16Array]>>,
+  };
+
+  const e = new Float64Array(d), z = new Float64Array(d);
+  const share = model.goals.firstHalfShare;
+  for (let s = 0; s < n; s++) {
+    for (let i = 0; i < d; i++) e[i] = gaussian(rand);
+    for (let i = 0; i < d; i++) {
+      let acc = 0;
+      for (let k = 0; k <= i; k++) acc += chol[i][k] * e[k];
+      z[i] = acc;
+    }
+
+    const h = quantileFromTable(rowTotals, normCdf(z[VAR_INDEX.goalsH]));
+    const a = quantileFromTable(condRows[h], normCdf(z[VAR_INDEX.goalsA]));
+    sim.gh[s] = h; sim.ga[s] = a;
+    // Each goal independently falls in the first half with the league's measured share.
+    let h1 = 0, a1 = 0;
+    for (let g = 0; g < h; g++) if (rand() < share) h1++;
+    for (let g = 0; g < a; g++) if (rand() < share) a1++;
+    sim.gh1[s] = h1; sim.ga1[s] = a1;
+
+    for (const stat of stats) {
+      const [vh, va] = STAT_VARS[stat];
+      sim.counts[stat]![0][s] = quantileFromTable(tables[vh], normCdf(z[VAR_INDEX[vh]]));
+      sim.counts[stat]![1][s] = quantileFromTable(tables[va], normCdf(z[VAR_INDEX[va]]));
+    }
+  }
+  return sim;
+}
+
+/** The result message the worker posts back; arrays ride in the transferred buffers. */
+export interface WorkerResult {
+  n: number; seed: number;
+  gh: Int16Array; ga: Int16Array; gh1: Int16Array; ga1: Int16Array;
+  counts: Partial<Record<StatKey, [Int16Array, Int16Array]>>;
+  err?: never;
+}
+
+const BUFFERS_OF: (s: ReturnType<typeof runSimulation>) => Transferable[] = (s) => [
+  s.gh.buffer, s.ga.buffer, s.gh1.buffer, s.ga1.buffer,
+  ...Object.values(s.counts).map(([a, b]) => [a.buffer, b.buffer]).flat(),
+] as Transferable[];
+
+/**
+ * Also the worker script. `simulate.ts` imports the function above from this file, and
+ * when it is re-run inside a worker_threads Worker (via tsx) it serves one request per
+ * message and posts the result back, transferring the backing buffers.
+ */
+if (!isMainThread) {
+  parentPort!.on('message', (msg: { model: WorkerFixtureModel; chol: number[][]; n: number; seed: number }) => {
+    try {
+      const sim = runSimulation(msg.model, msg.chol, msg.n, msg.seed);
+      parentPort!.postMessage({ n: sim.n, seed: sim.seed, gh: sim.gh, ga: sim.ga, gh1: sim.gh1, ga1: sim.ga1, counts: sim.counts }, BUFFERS_OF(sim));
+    } catch (err) {
+      parentPort!.postMessage({ err: err instanceof Error ? err.message : String(err) });
+    }
+  });
+}
+
+---
+import { MatchRecord } from './history';
+import { CountModel, FitOptions, fitCountModel, matchWeight } from './countModel';
+import { poissonPmf } from './distributions';
+
+export const MAX_GOALS = 10;
+
+/**
+ * Goals model: the shared team-strength fit plus the Dixon-Coles low-score correction.
+ *
+ * Independent Poissons misprice 0-0, 1-0, 0-1 and 1-1: real low-scoring matches are more
+ * often drawn than independence predicts (teams protecting a lead, cagey games). Dixon &
+ * Coles (1997) multiply those four cells by tau(x, y; rho) and leave every other score
+ * alone, with rho fitted by likelihood. rho < 0 is the usual finding and raises 0-0 / 1-1.
+ */
+export interface GoalsModel extends CountModel {
+  rho: number;
+  /** Share of goals scored before half-time; splits simulated full-time goals into halves. */
+  firstHalfShare: number;
+}
+
+export function tau(h: number, a: number, lh: number, la: number, rho: number): number {
+  if (h === 0 && a === 0) return 1 - lh * la * rho;
+  if (h === 0 && a === 1) return 1 + lh * rho;
+  if (h === 1 && a === 0) return 1 + la * rho;
+  if (h === 1 && a === 1) return 1 - rho;
+  return 1;
+}
+
+/** rho must keep every tau positive for the expected goals it is applied to. */
+function rhoBounds(lh: number, la: number): [number, number] {
+  const lo = Math.max(-1 / Math.max(lh, 1e-9), -1 / Math.max(la, 1e-9));
+  const hi = Math.min(1 / Math.max(lh * la, 1e-9), 1);
+  return [lo, hi];
+}
+
+/**
+ * Joint scoreline distribution 0..MAX_GOALS each side; probabilities sum to 1.
+ * The tail beyond MAX_GOALS is renormalised away (it carries ~1e-6 mass at realistic rates).
+ */
+export function scoreMatrix(lh: number, la: number, rho: number): number[][] {
+  const [lo, hi] = rhoBounds(lh, la);
+  const r = Math.min(hi, Math.max(lo, rho));
+  const ph = Array.from({ length: MAX_GOALS + 1 }, (_, k) => poissonPmf(lh, k));
+  const pa = Array.from({ length: MAX_GOALS + 1 }, (_, k) => poissonPmf(la, k));
+  const m: number[][] = [];
+  let total = 0;
+  for (let h = 0; h <= MAX_GOALS; h++) {
+    m[h] = [];
+    for (let a = 0; a <= MAX_GOALS; a++) {
+      m[h][a] = ph[h] * pa[a] * tau(h, a, lh, la, r);
+      total += m[h][a];
+    }
+  }
+  for (let h = 0; h <= MAX_GOALS; h++) for (let a = 0; a <= MAX_GOALS; a++) m[h][a] /= total;
+  return m;
+}
+
+export function fitGoalsModel(league: string, records: MatchRecord[], opts: FitOptions): GoalsModel | null {
+  const base = fitCountModel('goals', league, records, (r) => [r.hg, r.ag], opts);
+  if (!base) return null;
+
+  const asOfDay = opts.asOf.toISOString().slice(0, 10);
+  const rows = records.filter((r) => r.date < asOfDay && base.teams[r.home] && base.teams[r.away]);
+
+  // rho by weighted likelihood on a grid; only the tau term depends on it.
+  let bestRho = 0, bestLL = -Infinity;
+  for (let rho = -0.25; rho <= 0.15 + 1e-9; rho += 0.005) {
+    let ll = 0;
+    for (const r of rows) {
+      if (r.hg > 1 || r.ag > 1) continue;
+      const lh = base.baseHome * base.teams[r.home].for * base.teams[r.away].against;
+      const la = base.baseAway * base.teams[r.away].for * base.teams[r.home].against;
+      const t = tau(r.hg, r.ag, lh, la, rho);
+      if (t <= 0) { ll = -Infinity; break; }
+      ll += matchWeight(r.date, opts.asOf, opts.decayPerDay) * Math.log(t);
+    }
+    if (ll > bestLL) { bestLL = ll; bestRho = rho; }
+  }
+
+  let ht = 0, ft = 0;
+  for (const r of rows) {
+    if (r.hthg == null || r.htag == null) continue;
+    const w = matchWeight(r.date, opts.asOf, opts.decayPerDay);
+    ht += w * (r.hthg + r.htag);
+    ft += w * (r.hg + r.ag);
+  }
+
+  return { ...base, rho: Number(bestRho.toFixed(3)), firstHalfShare: ft > 0 ? ht / ft : 0.45 };
+}
+
+---
+/** Probability helpers shared by the count models, the simulation and the backtest. */
+
+export function poissonPmf(lambda: number, k: number): number {
+  if (k < 0) return 0;
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  let logP = -lambda + k * Math.log(lambda);
+  for (let i = 2; i <= k; i++) logP -= Math.log(i);
+  return Math.exp(logP);
+}
+
+function logGamma(x: number): number {
+  // Lanczos approximation, accurate to ~1e-15 for x > 0.
+  const g = 7;
+  const c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+    -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
+  x -= 1;
+  let a = c[0];
+  const t = x + g + 0.5;
+  for (let i = 1; i < g + 2; i++) a += c[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+/**
+ * Negative binomial with mean `mean` and variance `dispersion x mean` (dispersion > 1).
+ * Cards and corners are over-dispersed relative to a Poisson; this keeps their tails honest.
+ */
+export function negBinPmf(mean: number, dispersion: number, k: number): number {
+  if (dispersion <= 1.0001) return poissonPmf(mean, k);
+  if (k < 0) return 0;
+  const p = 1 / dispersion;
+  const r = mean / (dispersion - 1);
+  return Math.exp(logGamma(k + r) - logGamma(k + 1) - logGamma(r) + r * Math.log(p) + k * Math.log(1 - p));
+}
+
+/** Probability table 0..max for a count with the given mean/dispersion, tail folded into max. */
+export function countTable(mean: number, dispersion: number, max: number): Float64Array {
+  const t = new Float64Array(max + 1);
+  let s = 0;
+  for (let k = 0; k < max; k++) { t[k] = negBinPmf(mean, dispersion, k); s += t[k]; }
+  t[max] = Math.max(0, 1 - s);
+  return t;
+}
+
+/** Smallest k with CDF(k) >= u. */
+export function quantileFromTable(table: ArrayLike<number>, u: number): number {
+  let c = 0;
+  for (let k = 0; k < table.length; k++) {
+    c += table[k];
+    if (u <= c) return k;
+  }
+  return table.length - 1;
+}
+
+export function normCdf(z: number): number {
+  // Abramowitz-Stegun 7.1.26 via erf; max error ~1.5e-7.
+  const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t *
+    Math.exp(-(z * z) / 2);
+  return z >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y);
+}
+
+/** Inverse standard normal CDF (Acklam's algorithm, relative error < 1.2e-9). */
+export function normInv(p: number): number {
+  if (p <= 0) return -Infinity;
+  if (p >= 1) return Infinity;
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  const lo = 0.02425, hi = 1 - lo;
+  if (p < lo) {
+    const q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  if (p > hi) {
+    const q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  const q = p - 0.5, r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+    (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+
+/** Small seedable PRNG (mulberry32) so a run's simulation is reproducible. */
+export function rng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Standard normal draw (Box-Muller). */
+export function gaussian(rand: () => number): number {
+  let u = 0;
+  while (u === 0) u = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+}
+
+export function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+---
+import { MatchRecord, StatKey } from './history';
+import { negBinPmf, normInv, rng } from './distributions';
+
+/**
+ * The simulation's dependence structure: a Gaussian copula over these per-team counts.
+ *
+ * Each model gives a marginal distribution (how many corners Arsenal take), but the slip
+ * needs the JOINT behaviour (a match with many goals tends to have many shots, and a team
+ * chasing the game wins corners). That dependence is measured, not assumed: every past
+ * match's counts are turned into normal scores relative to what the models expected for
+ * that match, and the correlation of those scores across matches is the copula.
+ */
+export const SIM_VARS = [
+  'goalsH', 'goalsA', 'shotsH', 'shotsA', 'sotH', 'sotA',
+  'cornersH', 'cornersA', 'cardsH', 'cardsA', 'redsH', 'redsA',
+] as const;
+export type SimVar = typeof SIM_VARS[number];
+export const VAR_INDEX: Record<SimVar, number> = Object.fromEntries(SIM_VARS.map((v, i) => [v, i])) as any;
+
+export const STAT_VARS: Record<StatKey, [SimVar, SimVar]> = {
+  shots: ['shotsH', 'shotsA'], sot: ['sotH', 'sotA'], corners: ['cornersH', 'cornersA'],
+  cards: ['cardsH', 'cardsA'], reds: ['redsH', 'redsA'],
+};
+
+export type Expected = Partial<Record<SimVar, { mean: number; dispersion: number }>>;
+
+/** Randomised PIT: maps a discrete observation to a uniform, then to a normal score. */
+function normalScore(y: number, mean: number, dispersion: number, u: number): number {
+  let below = 0;
+  for (let k = 0; k < y; k++) below += negBinPmf(mean, dispersion, k);
+  const at = negBinPmf(mean, dispersion, y);
+  const p = Math.min(1 - 1e-9, Math.max(1e-9, below + u * at));
+  return normInv(p);
+}
+
+export function identity(n: number): number[][] {
+  return Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+}
+
+/**
+ * Correlation of normal scores across past matches. `expected(r)` returns the models'
+ * means for that match, or null to skip it. Home/away goals are forced to 0: their
+ * dependence is already carried exactly by the Dixon-Coles matrix the goals are drawn from.
+ */
+export function estimateCorrelation(records: MatchRecord[], expected: (r: MatchRecord) => Expected | null, seed = 7): number[][] {
+  const d = SIM_VARS.length;
+  const rand = rng(seed);
+  const cross = identity(d).map((row) => row.map(() => 0));
+
+  const observed = (r: MatchRecord, v: SimVar): number | undefined => {
+    if (v === 'goalsH') return r.hg;
+    if (v === 'goalsA') return r.ag;
+    for (const [stat, pair] of Object.entries(STAT_VARS)) {
+      const s = r.stats[stat as StatKey];
+      if (s && pair[0] === v) return s[0];
+      if (s && pair[1] === v) return s[1];
+    }
+    return undefined;
+  };
+
+  const zs: (number | null)[][] = [];
+  for (const r of records) {
+    const e = expected(r);
+    if (!e) continue;
+    zs.push(SIM_VARS.map((v) => {
+      const y = observed(r, v), m = e[v];
+      return y == null || !m ? null : normalScore(y, m.mean, m.dispersion, rand());
+    }));
+  }
+
+  // Pairwise-complete Pearson: leagues without stat columns still inform the goals block.
+  for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) {
+    let n = 0, si = 0, sj = 0, sii = 0, sjj = 0, sij = 0;
+    for (const z of zs) {
+      if (z[i] == null || z[j] == null) continue;
+      n++; si += z[i]!; sj += z[j]!; sii += z[i]! ** 2; sjj += z[j]! ** 2; sij += z[i]! * z[j]!;
+    }
+    if (n < 50) { cross[i][j] = i === j ? 1 : 0; continue; }
+    const cov = sij / n - (si / n) * (sj / n);
+    const vi = sii / n - (si / n) ** 2, vj = sjj / n - (sj / n) ** 2;
+    cross[i][j] = i === j ? 1 : cov / Math.sqrt(vi * vj);
+  }
+
+  const gH = VAR_INDEX.goalsH, gA = VAR_INDEX.goalsA;
+  cross[gH][gA] = cross[gA][gH] = 0;
+  return nearestCorrelation(cross);
+}
+
+/** Symmetric eigen-decomposition (cyclic Jacobi); fine for a 12x12 matrix. */
+function jacobiEigen(a: number[][]): { values: number[]; vectors: number[][] } {
+  const n = a.length;
+  const m = a.map((r) => r.slice());
+  const v = identity(n);
+  for (let sweep = 0; sweep < 100; sweep++) {
+    let off = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) off += m[i][j] ** 2;
+    if (off < 1e-18) break;
+    for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) {
+      if (Math.abs(m[p][q]) < 1e-15) continue;
+      const theta = (m[q][q] - m[p][p]) / (2 * m[p][q]);
+      const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+      const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < n; k++) {
+        const mkp = m[k][p], mkq = m[k][q];
+        m[k][p] = c * mkp - s * mkq; m[k][q] = s * mkp + c * mkq;
+      }
+      for (let k = 0; k < n; k++) {
+        const mpk = m[p][k], mqk = m[q][k];
+        m[p][k] = c * mpk - s * mqk; m[q][k] = s * mpk + c * mqk;
+      }
+      for (let k = 0; k < n; k++) {
+        const vkp = v[k][p], vkq = v[k][q];
+        v[k][p] = c * vkp - s * vkq; v[k][q] = s * vkp + c * vkq;
+      }
+    }
+  }
+  return { values: m.map((r, i) => r[i]), vectors: v };
+}
+
+/**
+ * Pairwise estimates and the forced zero can leave the matrix slightly indefinite, which
+ * would break the Cholesky factor. Clip negative eigenvalues and restore the unit diagonal.
+ */
+export function nearestCorrelation(a: number[][]): number[][] {
+  const n = a.length;
+  const { values, vectors } = jacobiEigen(a);
+  const clipped = values.map((x) => Math.max(x, 1e-6));
+  const out = identity(n).map((r) => r.map(() => 0));
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    let s = 0;
+    for (let k = 0; k < n; k++) s += vectors[i][k] * clipped[k] * vectors[j][k];
+    out[i][j] = s;
+  }
+  const dg = out.map((r, i) => Math.sqrt(r[i]));
+  return out.map((r, i) => r.map((x, j) => (i === j ? 1 : x / (dg[i] * dg[j]))));
+}
+
+export function cholesky(a: number[][]): number[][] {
+  const n = a.length;
+  const l = identity(n).map((r) => r.map(() => 0));
+  for (let i = 0; i < n; i++) for (let j = 0; j <= i; j++) {
+    let s = a[i][j];
+    for (let k = 0; k < j; k++) s -= l[i][k] * l[j][k];
+    l[i][j] = i === j ? Math.sqrt(Math.max(s, 1e-12)) : s / l[j][j];
+  }
+  return l;
+}
