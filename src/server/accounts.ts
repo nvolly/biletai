@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash, randomBytes } from 'crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { paths, settings } from '../config/config';
 
 /**
@@ -61,6 +62,82 @@ export class JsonUserStore implements UserStore {
 
   findByEmail(email: string): User | null {
     return this.all().find((u) => u.email === email) ?? null;
+  }
+}
+
+/**
+ * The SQLite-file implementation: one `users` table, replaced wholesale on save
+ * (same shape as `User` columns; the optional `plan` is stored as a JSON blob).
+ */
+export const USERS_DB_FILE = path.join(paths.data, 'users.db');
+
+const openUsersDb = (file: string) => {
+  const db = new DatabaseSync(file);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id        TEXT PRIMARY KEY,
+      email     TEXT NOT NULL UNIQUE,
+      keyHash   TEXT NOT NULL,
+      freeLeft  INTEGER NOT NULL,
+      credits   INTEGER NOT NULL,
+      used      INTEGER NOT NULL,
+      createdAt TEXT NOT NULL,
+      plan      TEXT
+    )
+  `);
+  return db;
+};
+
+export class SqliteUserStore implements UserStore {
+  private readonly db: DatabaseSync;
+
+  constructor(file: string) {
+    this.db = openUsersDb(file);
+  }
+
+  all(): User[] {
+    const rows = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users').all();
+    return rows.map((r) => this.rowToUser(r));
+  }
+
+  save(users: User[]) {
+    const tx = this.db.prepare('BEGIN');
+    const del = this.db.prepare('DELETE FROM users');
+    const ins = this.db.prepare(
+      'INSERT INTO users (id, email, keyHash, freeLeft, credits, used, createdAt, plan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    tx.run();
+    del.run();
+    for (const u of users) {
+      ins.run(u.id, u.email, u.keyHash, u.freeLeft, u.credits, u.used, u.createdAt, u.plan ? JSON.stringify(u.plan) : null);
+    }
+    this.db.exec('COMMIT');
+  }
+
+  findById(id: string): User | null {
+    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users WHERE id = ?').get(id);
+    return row ? this.rowToUser(row) : null;
+  }
+
+  findByKeyHash(keyHash: string): User | null {
+    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users WHERE keyHash = ?').get(keyHash);
+    return row ? this.rowToUser(row) : null;
+  }
+
+  findByEmail(email: string): User | null {
+    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users WHERE email = ?').get(email);
+    return row ? this.rowToUser(row) : null;
+  }
+
+  private rowToUser(r: Record<string, unknown>): User {
+    const u: User = {
+      id: r.id as string, email: r.email as string, keyHash: r.keyHash as string,
+      freeLeft: r.freeLeft as number, credits: r.credits as number, used: r.used as number,
+      createdAt: r.createdAt as string,
+    };
+    const plan = r.plan as string | null;
+    if (plan !== null) u.plan = JSON.parse(plan);
+    return u;
   }
 }
 
