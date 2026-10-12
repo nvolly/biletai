@@ -81,12 +81,15 @@ async function research(req: NewsRequest): Promise<{ notes: string; urls: string
     `fixture midweek), and what is at stake for each team. Prefer sources from the last 7 days. ` +
     `Report only what the sources say; say plainly when something could not be found.`;
   const messages: Message[] = [{ role: 'user', content: user }];
-  const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: settings.news.maxSearches }];
+  let tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: settings.news.maxSearches }];
 
   let text = '';
   const urls = new Set<string>();
   // The server pauses long search loops with stop_reason "pause_turn"; resuming means
-  // sending the paused turn back unchanged.
+  // sending the paused turn back unchanged. Each resumed turn would otherwise get a fresh
+  // max_uses budget, so the whole call can make up to 4 x the limit searches. Cap the total
+  // at settings.news.maxSearches: after each turn only the remaining budget is passed on.
+  let searches = 0;
   for (let turn = 0; turn < 4; turn++) {
     // Thinking off: same web search, about half the tokens (2026-10-07 probe: 3,431 vs
     // 7,258 input and 94 vs 209 output tokens for one search).
@@ -97,7 +100,11 @@ async function research(req: NewsRequest): Promise<{ notes: string; urls: string
       if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) for (const r of b.content) if (r?.url) urls.add(r.url);
     }
     if (res.stop_reason !== 'pause_turn') break;
+    searches += res.usage?.server_tool_use?.web_search_requests ?? 0;
+    if (searches > settings.news.maxSearches) logger.warn(
+      `research for ${req.home} v ${req.away}: ${searches} web searches, over the limit of ${settings.news.maxSearches}`);
     messages.push({ role: 'assistant', content: res.content });
+    tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: Math.max(0, settings.news.maxSearches - searches) }];
   }
   return { notes: text.trim(), urls: [...urls] };
 }
