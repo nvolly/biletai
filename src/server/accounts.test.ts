@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { JsonUserStore, SqliteUserStore, User } from './accounts';
+import { JsonUserStore, SqliteUserStore, User, createUserStore, USERS_DB_FILE } from './accounts';
 import { migrateUsers } from './migrate';
+import { settings } from '../config/config';
 
 const makeUser = (over: Partial<User> = {}): User => ({
   id: 'u1', email: 'a@b.ro', keyHash: 'hash-u1', freeLeft: 1, credits: 0, used: 0,
@@ -163,5 +164,32 @@ describe('migrateUsers (JSON -> SQLite, in a temporary folder)', () => {
   it('migrates zero users when the JSON file does not exist yet', () => {
     expect(migrateUsers(jsonFile, dbFile)).toBe(0);
     expect(new SqliteUserStore(dbFile).all()).toEqual([]);
+  });
+});
+
+describe('createUserStore (picks the store by server.userStore)', () => {
+  const original = settings.server.userStore;
+
+  beforeEach(() => {
+    settings.server.userStore = 'json';
+  });
+
+  afterEach(() => {
+    settings.server.userStore = original;
+  });
+
+  it('returns the JSON store by default (server.userStore = "json")', () => {
+    expect(settings.server.userStore).toBe('json');
+    expect(createUserStore()).toBeInstanceOf(JsonUserStore);
+  });
+
+  it('returns the SQLite store when server.userStore = "sqlite"', () => {
+    settings.server.userStore = 'sqlite';
+    const created = createUserStore();
+    expect(created).toBeInstanceOf(SqliteUserStore);
+    // it points at data/users.db and round-trips a user
+    created.save([makeUser()]);
+    expect(fs.existsSync(USERS_DB_FILE)).toBe(true);
+    expect(new SqliteUserStore(USERS_DB_FILE).findByEmail('a@b.ro')?.id).toBe('u1');
   });
 });

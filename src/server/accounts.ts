@@ -141,8 +141,18 @@ export class SqliteUserStore implements UserStore {
   }
 }
 
-/** The live store, used by the account functions below. */
-export const store: UserStore = new JsonUserStore(path.join(paths.data, 'users.json'));
+/**
+ * The live store, used by the account functions below (and the user CLI). Which
+ * implementation is picked by `server.userStore` in config/settings.yaml: "json" keeps
+ * users in data/users.json, "sqlite" in data/users.db (migrate with npm run users:migrate).
+ */
+export function createUserStore(): UserStore {
+  return settings.server.userStore === 'sqlite'
+    ? new SqliteUserStore(USERS_DB_FILE)
+    : new JsonUserStore(path.join(paths.data, 'users.json'));
+}
+
+export const store: UserStore = createUserStore();
 
 const addMonths = (iso: string, n: number) => { const d = new Date(iso); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString(); };
 export const planById = (id: string) => settings.plans.find((p) => p.id === id);
