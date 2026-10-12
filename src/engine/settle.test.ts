@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { MatchRecord } from '../stages/poisson/history';
-import { findRecord, settleGeneration, settleMatch, trackRecord } from './settle';
+import { CALIBRATION_EDGES, addCalibration, bucketIndexFor, finishCalibration, formatCalibration, makeCalibrationBuckets, findRecord, settleGeneration, settleMatch, trackRecord } from './settle';
 import type { GenerationResult, TicketMatch } from './generate';
 
 // Arsenal 2-1 Leeds, 1-0 at half-time, 11 corners (7+4), 4 cards, 21 shots.
@@ -40,6 +40,56 @@ describe('results tracker', () => {
     expect(findRecord([record], { fixture: { ...fixture, home: 'Leeds', away: 'Arsenal' } })).toBeUndefined();
   });
 
+  it('bucketing: a pick lands in the settle bucket for its shown probability', () => {
+    expect(CALIBRATION_EDGES[0]).toBe(0.5);
+    expect(bucketIndexFor(0.5)).toBe(0);    // from is included
+    expect(bucketIndexFor(0.59)).toBe(0);
+    expect(bucketIndexFor(0.6)).toBe(1);    // the lower edge starts the next bucket
+    expect(bucketIndexFor(0.85)).toBe(3);
+    expect(bucketIndexFor(0.9)).toBe(4);
+    expect(bucketIndexFor(1)).toBe(4);      // the top bucket caps at 1
+    expect(bucketIndexFor(0.49)).toBe(-1);  // below the first bucket: ignored, like the tracker
+  });
+
+  it('bucketing: buckets are fresh, zeroed and labeled by edge', () => {
+    const b = makeCalibrationBuckets();
+    expect(b.length).toBe(CALIBRATION_EDGES.length - 1);
+    expect(b[0]).toMatchObject({ from: 0.5, to: 0.6, label: '50–60%', n: 0, sumP: 0, won: 0 });
+    expect(b[4]).toMatchObject({ from: 0.9, to: 1, label: '90–100%' });
+  });
+
+  it('calibration: accumulates count and win rate, then finishes the table', () => {
+    const acc = makeCalibrationBuckets();
+    addCalibration(acc, 0.55, true);
+    addCalibration(acc, 0.58, false);   // mean shown prob 0.565, 1 of 2 wins
+    addCalibration(acc, 0.92, true);    // falls in the 90–100% bucket
+    addCalibration(acc, 0.4, true);     // below the buckets: ignored
+    const rows = finishCalibration(acc);
+    const low = rows.find((r) => r.from === 0.5)!;
+    expect(low.n).toBe(2);
+    expect(low.predicted).toBeCloseTo(0.565);
+    expect(low.actual).toBe(0.5);
+    const high = rows.find((r) => r.from === 0.9)!;
+    expect(high.n).toBe(1);
+    expect(high.actual).toBe(1);
+    expect(rows.every((r) => r.predicted <= 1 && r.actual <= 1)).toBe(true);
+  });
+
+  it('calibration: an empty bucket reports zero hits, not NaN', () => {
+    const rows = finishCalibration(makeCalibrationBuckets());
+    expect(rows.every((r) => r.n === 0 && r.predicted === 0 && r.actual === 0)).toBe(true);
+  });
+
+  it('calibration: the printer shows per-bucket count and both rates', () => {
+    const acc = makeCalibrationBuckets();
+    addCalibration(acc, 0.55, true);
+    addCalibration(acc, 0.58, false);
+    const text = formatCalibration(finishCalibration(acc));
+    expect(text).toContain('n=   2');
+    expect(text).toContain('predicted= 56%');
+    expect(text).toContain('actual= 50%');
+  });
+
   it('settles a generation once the match is over, and marks the ticket', () => {
     const g = {
       request: { betType: 'simple' },
@@ -57,6 +107,8 @@ describe('results tracker', () => {
     expect(tr.byType.simple.n).toBe(2);
     expect(tr.buckets.find((b) => b.from === 0.7)!.won).toBe(1);
     expect(tr.buckets.find((b) => b.from === 0.6)!.won).toBe(0);
+    expect(tr.calibration.find((r) => r.from === 0.7)!).toMatchObject({ n: 1, predicted: 0.72, actual: 1 });
+    expect(tr.calibration.find((r) => r.from === 0.6)!).toMatchObject({ n: 1, predicted: 0.65, actual: 0 });
     expect(tr.tickets).toMatchObject({ n: 2, won: 0 });
   });
 });
