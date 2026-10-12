@@ -1,6 +1,7 @@
 import { settings } from '../config/config';
 import { logger } from '../utils/logger';
 import { ModelBank, modelFor } from '../stages/poisson/modelBank';
+import type { DataQuality } from '../stages/poisson/history';
 import { simulateAsync } from '../stages/poisson/simulate';
 import { hashSeed } from '../stages/poisson/distributions';
 import { fairProbs } from '../stages/poisson/edge';
@@ -32,6 +33,8 @@ import type { MatchResult } from './settle';
 export type BetType = 'simple' | 'combo';
 export const asBetType = (v: unknown): BetType => (v === 'simple' ? 'simple' : 'combo');
 
+export type { DataQuality, TeamDataQuality } from '../stages/poisson/history';
+
 export interface GenerateRequest {
   tickets: number;
   matches: number;           // per ticket
@@ -51,6 +54,7 @@ export interface TicketMatch {
   probability: number;       // model, all selections win
   adjusted: number;          // after Jev's risk discount (= probability without AI)
   fairOdds: number;
+  dataQuality: DataQuality;  // "good" / "fair" / "limited" from the teams' fresh history
   explanation?: string;
   jev?: { risk: number; infoLow: number; consistency: number | null };
   result?: MatchResult;      // set by the results tracker once the match is played
@@ -85,7 +89,7 @@ function marketLabels(f: Fixture): Record<string, string> {
   return out;
 }
 
-interface Prepared { f: Fixture; byBand: (Builder | null)[] }
+interface Prepared { f: Fixture; byBand: (Builder | null)[]; quality: DataQuality }
 
 /** The free part for one fixture: models, market blend, simulation, best builder per band. */
 async function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [number, number][], lang: Lang): Promise<Prepared | string> {
@@ -103,7 +107,7 @@ async function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandLi
   const sim = await simulateAsync(model, bank.chol, settings.model.simulations, hashSeed(f.id));
   const pool = candidates(sim, catalogue(f.home, f.away, lang), new Set(r.modelled), opts);
   const byBand = bandList.map(([lo, hi]) => buildBest(sim, pool, { ...opts, minOdds: lo, maxOdds: hi }, 1)[0] ?? null);
-  return byBand.some(Boolean) ? { f, byBand } : `none ${f.home} v ${f.away}: no combination in the odds range`;
+  return byBand.some(Boolean) ? { f, byBand, quality: r.quality } : `none ${f.home} v ${f.away}: no combination in the odds range`;
 }
 
 export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log = () => {}, source: FixtureSource = footballDataFixtures): Promise<GenerationResult> {
@@ -150,7 +154,7 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
   const chosen: TicketMatch[] = [];
   const toMatch = (p: Prepared, bld: Builder, adjusted: number, extra: Partial<TicketMatch> = {}): TicketMatch => ({
     fixture: { id: p.f.id, league: p.f.league, leagueName: p.f.leagueName, country: p.f.country, home: p.f.home, away: p.f.away, kickoff: p.f.kickoff },
-    legs: bld.legs, probability: bld.probability, adjusted, fairOdds: bld.fairOdds, ...extra,
+    legs: bld.legs, probability: bld.probability, adjusted, fairOdds: bld.fairOdds, dataQuality: p.quality, ...extra,
   });
 
   if (!request.ai) {
