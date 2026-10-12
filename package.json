@@ -9,6 +9,7 @@
     "generate": "tsx src/engine/cli.ts",
     "user": "tsx src/server/userCli.ts",
     "backup": "tsx src/server/backupCli.ts",
+    "users:migrate": "tsx src/server/usersMigrateCli.ts",
     "desktop": "npm --prefix desktop start",
     "desktop:dist": "npm --prefix desktop run dist",
     "test": "jest"
