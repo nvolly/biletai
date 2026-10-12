@@ -9,7 +9,7 @@ import { buildModelBank, ModelBank } from '../stages/poisson/modelBank';
 import { LEAGUES } from '../stages/poisson/leagues';
 import { asBetType, generate, GenerateRequest, GenerationResult } from '../engine/generate';
 import { FatalPipelineError } from '../stages/news/newsAgent';
-import { activePlan, canGenerate, charge, createUser, findByKey, isPaused, pause, planLeft, unpause, User } from './accounts';
+import { activePlan, canGenerate, charge, createUser, findByKey, isPaused, pause, planLeft, setWeeklyLimit, unpause, weeklyLeft, weekStart, User } from './accounts';
 import { logCost, newUsage, withUsage } from '../utils/costMeter';
 import { settleAll, TRACK_FILE } from '../engine/settle';
 import { askAboutTicket, parseRequest } from '../stages/news/assistant';
@@ -118,6 +118,13 @@ function demoGeneration(): GenerationResult | null {
 
 const publicPlans = () => settings.plans.map(({ id, name, period, priceRon, generations, questions, featured }) => ({ id, name, period, priceRon, generations, questions, featured }));
 
+/** Hours until the current ISO week (Monday 00:00 UTC) ends, for a 429 retry-after hint. */
+const hoursToWeekStart = (now = new Date()) => {
+  const end = weekStart(now);
+  end.setUTCDate(end.getUTCDate() + 7);
+  return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 3600_000));
+};
+
 // ---- assistant limits: each call costs an AI request, so they're capped ----
 const ASK_PER_GENERATION = 10;   // generations made before plans existed
 const DAILY = { parse: 40, ask: 60 };
@@ -206,7 +213,18 @@ export const handler = async (req: http.IncomingMessage, res: http.ServerRespons
     const user = auth(req);
     if (p.startsWith('/v1/') && !user) return send(res, 401, { error: T.badKey });
 
-    if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: publicPlans(), limits: settings.tickets });
+    if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: publicPlans(), limits: settings.tickets, weekly: { limit: user!.weeklyLimit ?? null, left: weeklyLeft(user!) ?? null } });
+    if (req.method === 'POST' && p === '/v1/limit') {
+      const b = await body(req);
+      const raw = b.limit;
+      if (raw !== null && raw !== undefined && (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1)) return send(res, 400, { error: T.invalidLimit });
+      try {
+        const u = setWeeklyLimit(user!.email, raw == null ? null : raw);
+        return send(res, 200, { weekly: { limit: u.weeklyLimit ?? null, left: weeklyLeft(u) ?? null } });
+      } catch (e: any) {
+        return send(res, 400, { error: e?.message ?? String(e) });
+      }
+    }
     // A user can block their own generations for a while (1, 7 or 30 days) and un-block.
     if (p === '/v1/pause' && (req.method === 'GET' || req.method === 'POST')) {
       if (req.method === 'GET') return send(res, 200, { paused: pauseState(user!) });
@@ -222,6 +240,8 @@ export const handler = async (req: http.IncomingMessage, res: http.ServerRespons
       // A paused user is answered calmly and pointed at help; nothing is queued or charged.
       if (isPaused(user!)) return send(res, 403, { error: T.paused(remainingDays(user!.pausedUntil!), fmtUntil(user!.pausedUntil!), settings.server.helpUrl), paused: user!.pausedUntil! });
       if (!canGenerate(user!)) return send(res, 402, { error: T.noCredits, plans: publicPlans() });
+      const wleft = weeklyLeft(user!);
+      if (wleft !== null && wleft <= 0) return send(res, 429, { error: T.weeklyLimit(user!.weeklyLimit!), retryAfterHours: hoursToWeekStart() });
       if ([...jobs.values()].some((j) => j.userId === user!.id && (j.status === 'queued' || j.status === 'running'))) {
         return send(res, 409, { error: T.busy });
       }

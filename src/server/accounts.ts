@@ -24,6 +24,14 @@ export interface User {
   // A monthly plan: `used` counts this period's generations; the period renews monthly
   // from `periodStart` until `until`.
   plan?: { id: string; periodStart: string; until: string; used: number };
+  // Personal cap: at most this many generations per ISO week (Monday 00:00 UTC, 7 days),
+  // whatever paid for them. null/undefined = no cap.
+  weeklyLimit?: number;
+  // Generations charged this ISO week (weeklyLimit is only meaningful once set); the week
+  // is the Monday 00:00 UTC in `weekStart`, so the counter is exact as long as it's read
+  // within the same week and resets when a new week starts.
+  weekCount?: number;
+  weekStart?: string;
   // A voluntary pause: generations are blocked until `pausedUntil` (set by the user for
   // 1, 7 or 30 days, or by the admin). It clears itself once the date has passed.
   pausedUntil?: string;
@@ -74,24 +82,31 @@ export class JsonUserStore implements UserStore {
  */
 export const USERS_DB_FILE = path.join(paths.data, 'users.db');
 
+const USER_COLUMNS = ['id', 'email', 'keyHash', 'freeLeft', 'credits', 'used', 'createdAt', 'plan', 'weeklyLimit', 'weekCount', 'weekStart', 'pausedUntil'];
+
 const openUsersDb = (file: string) => {
   const db = new DatabaseSync(file);
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
-      id        TEXT PRIMARY KEY,
-      email     TEXT NOT NULL UNIQUE,
-      keyHash   TEXT NOT NULL,
-      freeLeft  INTEGER NOT NULL,
-      credits   INTEGER NOT NULL,
-      used      INTEGER NOT NULL,
-      createdAt TEXT NOT NULL,
-      plan      TEXT,
+      id          TEXT PRIMARY KEY,
+      email       TEXT NOT NULL UNIQUE,
+      keyHash     TEXT NOT NULL,
+      freeLeft    INTEGER NOT NULL,
+      credits     INTEGER NOT NULL,
+      used        INTEGER NOT NULL,
+      createdAt   TEXT NOT NULL,
+      plan        TEXT,
+      weeklyLimit INTEGER,
+      weekCount   INTEGER,
+      weekStart   TEXT,
       pausedUntil TEXT
     )
   `);
-  // Older databases lack the column; add it in place without touching existing rows.
-  const cols = db.prepare(`PRAGMA table_info(users)`).all().map((c) => (c as { name: string }).name);
-  if (!cols.includes('pausedUntil')) db.exec(`ALTER TABLE users ADD COLUMN pausedUntil TEXT`);
+  // Older tables get the newer columns added on first open, without touching existing rows.
+  const have = new Set(db.prepare(`PRAGMA table_info(users)`).all().map((r: any) => r.name as string));
+  for (const extra of ['weeklyLimit', 'weekCount', 'weekStart', 'pausedUntil']) {
+    if (!have.has(extra)) db.exec(`ALTER TABLE users ADD COLUMN ${extra} ${extra === 'weekStart' || extra === 'pausedUntil' ? 'TEXT' : 'INTEGER'}`);
+  }
   return db;
 };
 
@@ -102,38 +117,43 @@ export class SqliteUserStore implements UserStore {
     this.db = openUsersDb(file);
   }
 
+  private select = `SELECT ${USER_COLUMNS.join(', ')} FROM users`;
+
   all(): User[] {
-    const rows = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users').all();
-    return rows.map((r) => this.rowToUser(r));
+    return this.db.prepare(this.select).all().map((r: any) => this.rowToUser(r));
   }
 
   save(users: User[]) {
     const tx = this.db.prepare('BEGIN');
     const del = this.db.prepare('DELETE FROM users');
     const ins = this.db.prepare(
-      'INSERT INTO users (id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO users (${USER_COLUMNS.join(', ')}) VALUES (${USER_COLUMNS.map(() => '?').join(', ')})`,
     );
     tx.run();
     del.run();
     for (const u of users) {
-      ins.run(u.id, u.email, u.keyHash, u.freeLeft, u.credits, u.used, u.createdAt, u.plan ? JSON.stringify(u.plan) : null, u.pausedUntil ?? null);
+      ins.run(
+        u.id, u.email, u.keyHash, u.freeLeft, u.credits, u.used, u.createdAt,
+        u.plan ? JSON.stringify(u.plan) : null,
+        u.weeklyLimit ?? null, u.weekCount ?? null, u.weekStart ?? null, u.pausedUntil ?? null,
+      );
     }
     this.db.exec('COMMIT');
   }
 
   findById(id: string): User | null {
-    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users WHERE id = ?').get(id);
-    return row ? this.rowToUser(row) : null;
+    const row = this.db.prepare(`${this.select} WHERE id = ?`).get(id);
+    return row ? this.rowToUser(row as any) : null;
   }
 
   findByKeyHash(keyHash: string): User | null {
-    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users WHERE keyHash = ?').get(keyHash);
-    return row ? this.rowToUser(row) : null;
+    const row = this.db.prepare(`${this.select} WHERE keyHash = ?`).get(keyHash);
+    return row ? this.rowToUser(row as any) : null;
   }
 
   findByEmail(email: string): User | null {
-    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users WHERE email = ?').get(email);
-    return row ? this.rowToUser(row) : null;
+    const row = this.db.prepare(`${this.select} WHERE email = ?`).get(email);
+    return row ? this.rowToUser(row as any) : null;
   }
 
   private rowToUser(r: Record<string, unknown>): User {
@@ -144,8 +164,10 @@ export class SqliteUserStore implements UserStore {
     };
     const plan = r.plan as string | null;
     if (plan !== null) u.plan = JSON.parse(plan);
-    const pausedUntil = r.pausedUntil as string | null;
-    if (pausedUntil !== null) u.pausedUntil = pausedUntil;
+    if (r.weeklyLimit != null) u.weeklyLimit = r.weeklyLimit as number;
+    if (r.weekCount != null) u.weekCount = r.weekCount as number;
+    if (r.weekStart != null) u.weekStart = r.weekStart as string;
+    if (r.pausedUntil != null) u.pausedUntil = r.pausedUntil as string;
     return u;
   }
 }
@@ -169,6 +191,14 @@ export const setStore = (s: UserStore) => { store = s; };
 
 const addMonths = (iso: string, n: number) => { const d = new Date(iso); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString(); };
 export const planById = (id: string) => settings.plans.find((p) => p.id === id);
+
+/** The ISO week a timestamp belongs to: the Monday 00:00 UTC that starts it. */
+export const weekStart = (d: Date) => {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = x.getUTCDay() || 7; // Sunday is the last day of its week
+  x.setUTCDate(x.getUTCDate() - (day - 1));
+  return x;
+};
 
 /** The user's plan with its period rolled forward to today; null if none or expired. */
 export function activePlan(u: User, now = new Date()): (User['plan'] & { def: NonNullable<ReturnType<typeof planById>> }) | null {
@@ -212,21 +242,54 @@ export function listUsers(): User[] {
   return store.all();
 }
 
-export function addCredits(email: string, n: number): User {
-  const u = store.findByEmail(email.trim().toLowerCase());
+/** The user list from `st` with `u` in place of the entry with the same id. */
+function withUser(st: UserStore, u: User): User[] {
+  return st.all().map((o) => (o.id === u.id ? u : o));
+}
+
+export function addCredits(email: string, n: number, st: UserStore = store): User {
+  const u = st.findByEmail(email.trim().toLowerCase());
   if (!u) throw new Error('no such user');
   u.credits = Math.max(0, u.credits + n);
-  store.save(store.all());
+  st.save(withUser(st, u));
   return u;
 }
 
+/**
+ * The personal weekly cap, settable by the user and by the admin (npm run user -- limit).
+ * The cap covers every generation charged whatever paid for it (free, plan, top-up) and
+ * resets every ISO week (Monday 00:00 UTC, 7 days). `null` removes the cap.
+ */
+export function setWeeklyLimit(email: string, limit: number | null, st: UserStore = store): User {
+  const u = st.findByEmail(email.trim().toLowerCase());
+  if (!u) throw new Error('no such user');
+  if (limit !== null) {
+    if (!Number.isInteger(limit) || limit < 1) throw new Error('limit must be a positive whole number');
+    u.weeklyLimit = limit;
+  } else delete u.weeklyLimit;
+  st.save(withUser(st, u));
+  return u;
+}
+
+/**
+ * How many generations the user may still generate this ISO week under their personal
+ * cap. `null` = no cap. Counts the generations charged so far this week, which reset
+ * automatically when a new week begins.
+ */
+export function weeklyLeft(u: User, now = new Date()): number | null {
+  if (u.weeklyLimit == null) return null;
+  const ws = weekStart(now).toISOString();
+  const charged = u.weekStart === ws ? u.weekCount ?? 0 : 0;
+  return Math.max(0, u.weeklyLimit - charged);
+}
+
 /** A new access key for a user (the old one stops working). */
-export function rotateKey(email: string): string {
-  const u = store.findByEmail(email.trim().toLowerCase());
+export function rotateKey(email: string, st: UserStore = store): string {
+  const u = st.findByEmail(email.trim().toLowerCase());
   if (!u) throw new Error('no such user');
   const accessKey = `bai_${randomBytes(24).toString('base64url')}`;
   u.keyHash = hash(accessKey);
-  store.save(store.all());
+  st.save(withUser(st, u));
   return accessKey;
 }
 
@@ -271,8 +334,8 @@ export const canGenerate = (u: User, now = new Date()) => !isPaused(u, now) && (
  * Charge one generation after it succeeded: free ones first, then this month's plan, then
  * top-up credits. Returns how many "ask about the ticket" questions it comes with.
  */
-export function charge(userId: string, now = new Date()): { user: User; questions: number } | null {
-  const u = store.findById(userId);
+export function charge(userId: string, now = new Date(), st: UserStore = store): { user: User; questions: number } | null {
+  const u = st.findById(userId);
   if (!u) return null;
   let questions = settings.server.freeQuestions;
   const p = activePlan(u, now);
@@ -282,7 +345,13 @@ export function charge(userId: string, now = new Date()): { user: User; question
     questions = p.def.questions;
   } else if (u.credits > 0) { u.credits--; questions = creditQuestions(); }
   u.used++;
-  store.save(store.all());
+  // Weekly counter: only meaningful while a personal cap is set on the user.
+  if (u.weeklyLimit != null) {
+    const ws = weekStart(now).toISOString();
+    if (u.weekStart !== ws) { u.weekStart = ws; u.weekCount = 0; }
+    u.weekCount = (u.weekCount ?? 0) + 1;
+  }
+  st.save(withUser(st, u));
   return { user: u, questions };
 }
 
@@ -290,13 +359,13 @@ export function charge(userId: string, now = new Date()): { user: User; question
  * Give a user a plan (admin, until payments are wired): a monthly plan for `months` months
  * starting now, or a one-off pack added to the top-up credits.
  */
-export function setPlan(email: string, planId: string, months = 1, now = new Date()): User {
+export function setPlan(email: string, planId: string, months = 1, now = new Date(), st: UserStore = store): User {
   const def = planById(planId);
   if (!def) throw new Error(`no such plan: ${planId} (${settings.plans.map((p) => p.id).join(', ')})`);
-  const u = store.findByEmail(email.trim().toLowerCase());
+  const u = st.findByEmail(email.trim().toLowerCase());
   if (!u) throw new Error('no such user');
   if (def.period === 'once') u.credits += def.generations;
   else u.plan = { id: def.id, periodStart: now.toISOString(), until: addMonths(now.toISOString(), months), used: 0 };
-  store.save(store.all());
+  st.save(withUser(st, u));
   return u;
 }
