@@ -16,6 +16,7 @@
   "type": "commonjs",
   "devDependencies": {
     "@jest/globals": "^30.0.0-alpha.3",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "^29.5.12",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.6.0",
@@ -27,6 +28,7 @@
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0",
     "axios": "^1.15.2",
+    "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
     "js-yaml": "^4.1.0",
     "winston": "^3.19.0",
