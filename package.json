@@ -8,6 +8,7 @@
     "app": "tsx src/server/server.ts --open",
     "generate": "tsx src/engine/cli.ts",
     "user": "tsx src/server/userCli.ts",
+    "backup": "tsx src/server/backupCli.ts",
     "desktop": "npm --prefix desktop start",
     "desktop:dist": "npm --prefix desktop run dist",
     "test": "jest"
