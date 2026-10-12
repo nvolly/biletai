@@ -1,7 +1,7 @@
 import { settings } from '../config/config';
 import { logger } from '../utils/logger';
 import { ModelBank, modelFor } from '../stages/poisson/modelBank';
-import { simulate } from '../stages/poisson/simulate';
+import { simulateAsync } from '../stages/poisson/simulate';
 import { hashSeed } from '../stages/poisson/distributions';
 import { fairProbs } from '../stages/poisson/edge';
 import { blend, impliedGoalLambdas } from '../stages/poisson/marketBlend';
@@ -88,7 +88,7 @@ function marketLabels(f: Fixture): Record<string, string> {
 interface Prepared { f: Fixture; byBand: (Builder | null)[] }
 
 /** The free part for one fixture: models, market blend, simulation, best builder per band. */
-function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [number, number][], lang: Lang): Prepared | string {
+async function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [number, number][], lang: Lang): Promise<Prepared | string> {
   const r = modelFor(bank, f.league, f.home, f.away);
   if (!r.ok) return `skip ${f.home} v ${f.away}: ${r.reason}`;
   const model = r.model;
@@ -100,7 +100,7 @@ function prepare(bank: ModelBank, f: Fixture, opts: BuilderOptions, bandList: [n
     model.goals.lh = blend(model.goals.lh, lh, settings.model.modelWeight);
     model.goals.la = blend(model.goals.la, la, settings.model.modelWeight);
   }
-  const sim = simulate(model, bank.chol, settings.model.simulations, hashSeed(f.id));
+  const sim = await simulateAsync(model, bank.chol, settings.model.simulations, hashSeed(f.id));
   const pool = candidates(sim, catalogue(f.home, f.away, lang), new Set(r.modelled), opts);
   const byBand = bandList.map(([lo, hi]) => buildBest(sim, pool, { ...opts, minOdds: lo, maxOdds: hi }, 1)[0] ?? null);
   return byBand.some(Boolean) ? { f, byBand } : `none ${f.home} v ${f.away}: no combination in the odds range`;
@@ -140,7 +140,7 @@ export async function generate(bank: ModelBank, req: GenerateRequest, onLog: Log
 
   const prepared: Prepared[] = [];
   for (const f of fixtures) {
-    const p = prepare(bank, f, opts, bandList, request.lang);
+    const p = await prepare(bank, f, opts, bandList, request.lang);
     if (typeof p === 'string') logger.debug(p); else prepared.push(p);
   }
   say((betType === 'simple' ? T.withPick : T.withCombo)(prepared.length, request.minOdds, request.maxOdds));
