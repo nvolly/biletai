@@ -1,0 +1,47 @@
+# BiletAI server on a VPS, behind Caddy (see DEPLOY.md).
+#
+#   .env is read only by docker-compose (for its own substitution) - it is NEVER copied into
+#   the image, and reaches the container only as environment variables.
+#   data/ and logs/ live as bind mounts, so state and logs survive `docker compose up -d`.
+
+services:
+  biletai:
+    build: .
+    image: biletai-server:latest
+    container_name: biletai
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 8787
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    # Only the host on 127.0.0.1: Caddy (same host, same network namespace) reaches the
+    # container and is the only thing that publishes 80/443. Port 8787 is never public.
+    ports:
+      - "127.0.0.1:8787:8787"
+    # One generation blocks the server ~15 s (simulation on the main thread, to-do list:
+    # a worker thread before scaling). One core is enough at this stage; raise memory
+    # with the server if the model bank starts to strain it.
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # Caddy: reverse proxy with automatic HTTPS (Let's Encrypt). The Caddyfile lives in
+  # the repo (deploy/caddy/Caddyfile) and is not a secret - the only secret is the domain.
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_conf:/config
+
+volumes:
+  caddy_data:
+  caddy_conf:

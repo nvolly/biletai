@@ -1,0 +1,23 @@
+# Caddy config for BiletAI on the VPS (mounted by docker-compose.yml).
+#
+# Swap biletai.example.ro for Vali's domain before starting. The domain must A/AAAA
+# record to the VPS's IP before Caddy can get the certificate.
+#
+# Caddy does everything itself:
+#   - listens on 80/443
+#   - provisions Let's Encrypt certificates on first use and renews them
+#   - serves biletai.example.ro on HTTPS
+#   - redirects the whole http:// site to https:// automatically (with one exception below)
+
+biletai.example.ro {
+	# Caddy's ACME challenge comes from the server; no extra config needed.
+
+	# The desktop app is a single client/index.html that talks to the same-origin API,
+	# so there is no separate static host: Caddy just proxies everything to the server
+	# (which serves /client/index.html itself).
+	reverse_proxy biletai:8787 {
+		# The server answers 500s for errors; let Caddy log them the same way.
+		log
+		transport http
+	}
+}
