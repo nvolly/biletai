@@ -48,6 +48,7 @@ server:
   freeGenerations: 2 # then the plans popup
   freeQuestions: 3 # "ask about the ticket" questions per free generation
   userStore: json # where accounts are stored: "json" (data/users.json) or "sqlite" (data/users.db)
+  helpUrl: https://biletai.ro/ajutor # support link, shown in messages that point to help
 
 # Plans (owner, 2026-10-09). Prices include VAT. No payments until the ONJN answer and the
 # lawyer's review: until then plans are assigned with `npm run user -- plan <email> <id>`.

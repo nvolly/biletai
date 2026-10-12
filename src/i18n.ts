@@ -49,6 +49,10 @@ export const MSG = {
     askLimit: (n: number) => `Ai folosit toate cele ${n} întrebări pentru această generare.`,
     dailyLimit: 'Ai atins limita zilnică pentru asistent. Încearcă din nou mâine.',
     tooLong: 'Mesajul e prea lung.',
+    paused: (days: number, until: string, url: string) => `Generările sunt oprite de tine până pe ${until} (${days} zile) — o pauză aleasă pentru binele tău. Repornește-le din cont ori când ești gata. Ai nevoie de ajutor? ${url}`,
+    pausedSet: (days: number, until: string) => `Ai oprit generările pentru ${days} zile, până pe ${until}.`,
+    pauseInvalid: 'Alege o pauză de 1, 7 sau 30 de zile.',
+    unpause: 'Generările sunt reactive. Poți continua oricând.',
   },
   en: {
     upcoming: (n: number, h: number, need: number) => `${n} matches in the next ${h} hours; ${need} needed`,
@@ -70,6 +74,10 @@ export const MSG = {
     askLimit: (n: number) => `You've used all ${n} questions for this generation.`,
     dailyLimit: "You've reached today's assistant limit. Try again tomorrow.",
     tooLong: 'That message is too long.',
+    paused: (days: number, until: string, url: string) => `Generations are paused by you until ${until} (${days} days) — a break you chose for your own good. Turn them back on from your account whenever you're ready. Need help? ${url}`,
+    pausedSet: (days: number, until: string) => `You paused generations for ${days} days, until ${until}.`,
+    pauseInvalid: 'Choose a pause of 1, 7 or 30 days.',
+    unpause: 'Generations are back on. You can continue anytime.',
   },
 };
 

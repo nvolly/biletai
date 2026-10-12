@@ -24,6 +24,9 @@ export interface User {
   // A monthly plan: `used` counts this period's generations; the period renews monthly
   // from `periodStart` until `until`.
   plan?: { id: string; periodStart: string; until: string; used: number };
+  // A voluntary pause: generations are blocked until `pausedUntil` (set by the user for
+  // 1, 7 or 30 days, or by the admin). It clears itself once the date has passed.
+  pausedUntil?: string;
 }
 
 /**
@@ -82,9 +85,13 @@ const openUsersDb = (file: string) => {
       credits   INTEGER NOT NULL,
       used      INTEGER NOT NULL,
       createdAt TEXT NOT NULL,
-      plan      TEXT
+      plan      TEXT,
+      pausedUntil TEXT
     )
   `);
+  // Older databases lack the column; add it in place without touching existing rows.
+  const cols = db.prepare(`PRAGMA table_info(users)`).all().map((c) => (c as { name: string }).name);
+  if (!cols.includes('pausedUntil')) db.exec(`ALTER TABLE users ADD COLUMN pausedUntil TEXT`);
   return db;
 };
 
@@ -96,7 +103,7 @@ export class SqliteUserStore implements UserStore {
   }
 
   all(): User[] {
-    const rows = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users').all();
+    const rows = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users').all();
     return rows.map((r) => this.rowToUser(r));
   }
 
@@ -104,28 +111,28 @@ export class SqliteUserStore implements UserStore {
     const tx = this.db.prepare('BEGIN');
     const del = this.db.prepare('DELETE FROM users');
     const ins = this.db.prepare(
-      'INSERT INTO users (id, email, keyHash, freeLeft, credits, used, createdAt, plan) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO users (id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
     tx.run();
     del.run();
     for (const u of users) {
-      ins.run(u.id, u.email, u.keyHash, u.freeLeft, u.credits, u.used, u.createdAt, u.plan ? JSON.stringify(u.plan) : null);
+      ins.run(u.id, u.email, u.keyHash, u.freeLeft, u.credits, u.used, u.createdAt, u.plan ? JSON.stringify(u.plan) : null, u.pausedUntil ?? null);
     }
     this.db.exec('COMMIT');
   }
 
   findById(id: string): User | null {
-    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users WHERE id = ?').get(id);
+    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users WHERE id = ?').get(id);
     return row ? this.rowToUser(row) : null;
   }
 
   findByKeyHash(keyHash: string): User | null {
-    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users WHERE keyHash = ?').get(keyHash);
+    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users WHERE keyHash = ?').get(keyHash);
     return row ? this.rowToUser(row) : null;
   }
 
   findByEmail(email: string): User | null {
-    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan FROM users WHERE email = ?').get(email);
+    const row = this.db.prepare('SELECT id, email, keyHash, freeLeft, credits, used, createdAt, plan, pausedUntil FROM users WHERE email = ?').get(email);
     return row ? this.rowToUser(row) : null;
   }
 
@@ -137,6 +144,8 @@ export class SqliteUserStore implements UserStore {
     };
     const plan = r.plan as string | null;
     if (plan !== null) u.plan = JSON.parse(plan);
+    const pausedUntil = r.pausedUntil as string | null;
+    if (pausedUntil !== null) u.pausedUntil = pausedUntil;
     return u;
   }
 }
@@ -152,7 +161,11 @@ export function createUserStore(): UserStore {
     : new JsonUserStore(path.join(paths.data, 'users.json'));
 }
 
-export const store: UserStore = createUserStore();
+// The store the account functions read from and write to. `setStore` lets tests point the
+// whole module at a store in a temp folder without touching `data/`.
+let store: UserStore = createUserStore();
+export const currentStore = (): UserStore => store;
+export const setStore = (s: UserStore) => { store = s; };
 
 const addMonths = (iso: string, n: number) => { const d = new Date(iso); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString(); };
 export const planById = (id: string) => settings.plans.find((p) => p.id === id);
@@ -217,7 +230,42 @@ export function rotateKey(email: string): string {
   return accessKey;
 }
 
-export const canGenerate = (u: User) => u.freeLeft > 0 || planLeft(u) > 0 || u.credits > 0;
+/**
+ * A voluntary pause: the user (or the admin) blocks their own generations so they have
+ * room to step back. Only 1, 7 or 30 day lengths are offered; setting the length to 0
+ * (or passing null) lifts the pause. The pause ends and clears itself when it is over.
+ */
+export function isPaused(u: User, now = new Date()): boolean {
+  const until = u.pausedUntil ? new Date(u.pausedUntil) : null;
+  return until !== null && until > now;
+}
+
+/** Block generations for one of the allowed lengths; `days = 0` lifts the pause. */
+export function pause(email: string, days: number, now = new Date()): User {
+  if (![1, 7, 30].includes(Math.trunc(days))) throw new Error('pause: days must be 1, 7 or 30');
+  const all = store.all();
+  const u = all.find((x) => x.email === email.trim().toLowerCase());
+  if (!u) throw new Error('no such user');
+  const d = new Date(now);
+  d.setUTCDate(d.getUTCDate() + Math.trunc(days));
+  u.pausedUntil = d.toISOString();
+  store.save(all);
+  return u;
+}
+
+/** Lift the pause (the user, or the admin with `days = 0`). */
+export function unpause(email: string): User {
+  const all = store.all();
+  const u = all.find((x) => x.email === email.trim().toLowerCase());
+  if (!u) throw new Error('no such user');
+  u.pausedUntil = undefined;
+  store.save(all);
+  return u;
+}
+
+// A paused user can spend their balance on nothing: a pause blocks generations even while
+// free, plan or top-up credits remain. Once the pause date has passed it no longer blocks.
+export const canGenerate = (u: User, now = new Date()) => !isPaused(u, now) && (u.freeLeft > 0 || planLeft(u, now) > 0 || u.credits > 0);
 
 /**
  * Charge one generation after it succeeded: free ones first, then this month's plan, then

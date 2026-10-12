@@ -1,6 +1,6 @@
 import { settings } from '../config/config';
 import { readCosts } from '../utils/costMeter';
-import { activePlan, addCredits, createUser, listUsers, planLeft, rotateKey, setPlan } from './accounts';
+import { activePlan, addCredits, createUser, isPaused, listUsers, planLeft, pause, rotateKey, setPlan } from './accounts';
 
 /**
  * Server-side user admin (run on the server):
@@ -8,6 +8,7 @@ import { activePlan, addCredits, createUser, listUsers, planLeft, rotateKey, set
  *   npm run user -- credit <email> <n>        add (or with a negative n remove) top-up credits
  *   npm run user -- plan <email> <id> [months] give a plan (start | pro | max | topup10)
  *   npm run user -- key <email>               issue a new access key (old one stops working)
+ *   npm run user -- pause <email> <days>      block generations for 1, 7 or 30 days (0 lifts it)
  *   npm run user -- list
  *   npm run user -- costs                     what generations and questions really cost
  */
@@ -57,15 +58,18 @@ try {
     console.log(`  ${u.email}: ${p ? `${p.def.name} until ${p.until.slice(0, 10)}, ${planLeft(u)} left this month` : 'no monthly plan'} · ${u.freeLeft} free · ${u.credits} top-up`);
   } else if (cmd === 'key' && a) {
     console.log(`  NEW ACCESS KEY for ${a} (shown once): ${rotateKey(a)}`);
+  } else if (cmd === 'pause' && a && b) {
+    const u = pause(a, Number(b));
+    console.log(`  ${u.email}: ${isPaused(u) ? `paused until ${u.pausedUntil!.slice(0, 10)}` : 'pause lifted'}`);
   } else if (cmd === 'list') {
     for (const u of listUsers()) {
       const p = activePlan(u);
-      console.log(`  ${u.email.padEnd(32)} free ${u.freeLeft}  top-up ${u.credits}  plan ${p ? `${p.def.name} (${planLeft(u)} left)` : '-'}  used ${u.used}  since ${u.createdAt.slice(0, 10)}`);
+      console.log(`  ${u.email.padEnd(32)} free ${u.freeLeft}  top-up ${u.credits}  plan ${p ? `${p.def.name} (${planLeft(u)} left)` : '-'}  used ${u.used}  since ${u.createdAt.slice(0, 10)}${isPaused(u) ? `  PAUSED until ${u.pausedUntil!.slice(0, 10)}` : ''}`);
     }
   } else if (cmd === 'costs') {
     costReport();
   } else {
-    console.log('usage: npm run user -- add <email> [credits] | credit <email> <n> | plan <email> <id> [months] | key <email> | list | costs');
+    console.log('usage: npm run user -- add <email> [credits] | credit <email> <n> | plan <email> <id> [months] | key <email> | pause <email> <days> | list | costs');
     process.exit(1);
   }
 } catch (e: any) {

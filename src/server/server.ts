@@ -9,7 +9,7 @@ import { buildModelBank, ModelBank } from '../stages/poisson/modelBank';
 import { LEAGUES } from '../stages/poisson/leagues';
 import { asBetType, generate, GenerateRequest, GenerationResult } from '../engine/generate';
 import { FatalPipelineError } from '../stages/news/newsAgent';
-import { activePlan, canGenerate, charge, createUser, findByKey, planLeft, User } from './accounts';
+import { activePlan, canGenerate, charge, createUser, findByKey, isPaused, pause, planLeft, unpause, User } from './accounts';
 import { logCost, newUsage, withUsage } from '../utils/costMeter';
 import { settleAll, TRACK_FILE } from '../engine/settle';
 import { askAboutTicket, parseRequest } from '../stages/news/assistant';
@@ -25,6 +25,8 @@ import { asLang, MSG } from '../i18n';
  *   GET  /v1/leagues                 leagues the models cover
  *   POST /v1/generate                start a generation (betType simple | combo) -> { jobId }
  *   GET  /v1/jobs/:id                progress log and, when done, the tickets
+ *   GET  /v1/pause                   the caller's pause state, or the help link with no body
+ *   POST /v1/pause                   { days: 1 | 7 | 30 } pause; { days: 0 } lifts the pause
  *   GET  /v1/history                 the caller's recent generations (settled ones carry results)
  *   GET  /v1/track-record            how BiletAI's settled picks actually did
  *   POST /v1/parse                   { text } -> settings for the form (request box)
@@ -161,8 +163,18 @@ const publicUser = (u: User) => {
   return {
     email: u.email, freeLeft: u.freeLeft, credits: u.credits, used: u.used,
     plan: p ? { id: p.id, name: p.def.name, left: planLeft(u), generations: p.def.generations, questions: p.def.questions, until: p.until } : null,
+    paused: isPaused(u) ? u.pausedUntil! : null,
   };
 };
+
+/** The state of the caller's self-pause: the date it lifts, or null while not paused. */
+const pauseState = (u: User) => (isPaused(u) ? u.pausedUntil! : null);
+
+/** A pause end as a calendar-day string, for calm messages ("până pe 2026-10-20"). */
+const fmtUntil = (iso: string) => new Date(iso).toISOString().slice(0, 10);
+
+/** Whole days left in a pause (at least 1 while it is active), for the calm message. */
+const remainingDays = (iso: string) => Math.max(1, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
 
 export const handler = async (req: http.IncomingMessage, res: http.ServerResponse) => {
   const url = new URL(req.url ?? '/', 'http://x');
@@ -195,7 +207,20 @@ export const handler = async (req: http.IncomingMessage, res: http.ServerRespons
     if (p.startsWith('/v1/') && !user) return send(res, 401, { error: T.badKey });
 
     if (req.method === 'GET' && p === '/v1/me') return send(res, 200, { ...publicUser(user!), plans: publicPlans(), limits: settings.tickets });
+    // A user can block their own generations for a while (1, 7 or 30 days) and un-block.
+    if (p === '/v1/pause' && (req.method === 'GET' || req.method === 'POST')) {
+      if (req.method === 'GET') return send(res, 200, { paused: pauseState(user!) });
+      const b = await body(req);
+      const days = Math.trunc(Number(b.days ?? 0));
+      const u = user!;
+      if (days === 0) { const n = unpause(u.email); return send(res, 200, { paused: pauseState(n), message: T.unpause }); }
+      if (![1, 7, 30].includes(days)) return send(res, 400, { error: T.pauseInvalid, paused: pauseState(u) });
+      const p = pause(u.email, days);
+      return send(res, 200, { paused: pauseState(p), message: T.pausedSet(days, fmtUntil(p.pausedUntil!)) });
+    }
     if (req.method === 'POST' && p === '/v1/generate') {
+      // A paused user is answered calmly and pointed at help; nothing is queued or charged.
+      if (isPaused(user!)) return send(res, 403, { error: T.paused(remainingDays(user!.pausedUntil!), fmtUntil(user!.pausedUntil!), settings.server.helpUrl), paused: user!.pausedUntil! });
       if (!canGenerate(user!)) return send(res, 402, { error: T.noCredits, plans: publicPlans() });
       if ([...jobs.values()].some((j) => j.userId === user!.id && (j.status === 'queued' || j.status === 'running'))) {
         return send(res, 409, { error: T.busy });
