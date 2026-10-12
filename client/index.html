@@ -94,6 +94,9 @@
   .leg { font-size: 12.5px; padding: 3px 9px; border-radius: 8px; background: var(--field); border: 1px solid var(--line); }
   .leg em { font-style: normal; color: var(--muted); }
   .odds { text-align: right; } .odds .o { font-size: 16px; font-weight: 750; } .odds .p { font-size: 12px; color: var(--muted); }
+  /* Data-quality tag next to the odds: how complete the team news was (from the AI check). */
+  .qtag { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+  .odds .qtag.good { color: var(--ok); } .odds .qtag.bad { color: var(--bad); }
   .why { grid-column: 2 / -1; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
   .hist { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer; gap: 8px; }
@@ -270,6 +273,7 @@ const T = {
     total: 'cotă corectă totală', cumulated: 'Cote cumulate',
     chanceHint: 'Șansa estimată ca toate selecțiile de pe acest meci să iasă, după verificarea riscului de către AI.',
     legChanceHint: 'Șansa doar pentru această selecție.',
+    dataQual: (lvl) => ({ good: 'date bune', fair: 'date medii', poor: 'date puține' })[lvl],
     fillMode: 'Mod completare', image: 'Imagine', addedOne: 'Adăugat',
     fillHint: 'Bifează fiecare selecție pe măsură ce o adaugi în aplicația ta și scrie cota primită, ca s-o compari cu cota corectă.',
     cmpNote: 'Peste cota corectă = un preț mai bun decât estimează modelul. Nu garantează câștigul.',
@@ -322,6 +326,7 @@ const T = {
     total: 'total fair odds', cumulated: 'Cumulated odds',
     chanceHint: 'Estimated chance that every selection on this match comes in, after the AI risk check.',
     legChanceHint: 'Chance of this selection on its own.',
+    dataQual: (lvl) => ({ good: 'good data', fair: 'fair data', poor: 'limited data' })[lvl],
     fillMode: 'Fill-in mode', image: 'Image', addedOne: 'Added',
     fillHint: 'Tick each selection as you add it in your app, and type the odds you got to compare them with the fair odds.',
     cmpNote: 'Above fair odds = a better price than the model estimates. It does not guarantee a win.',
@@ -424,6 +429,9 @@ const when = (iso) => new Date(iso).toLocaleString(t().locale, { weekday: 'short
 const clockTime = (iso) => new Date(iso).toLocaleTimeString(t().locale, { hour: '2-digit', minute: '2-digit' });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const country = (c) => t().countries[c] || c;
+// Data-quality level from Jev's info check: lowInfo = chance the news for this match is thin.
+const qualLevel = (m) => { if (!m.jev) return 'fair'; const l = m.jev.infoLow; return l < 0.25 ? 'good' : l < 0.6 ? 'fair' : 'poor'; };
+const qualTag = (m) => `<span class="qtag ${qualLevel(m) === 'poor' ? 'bad' : qualLevel(m) === 'good' ? 'good' : ''}">${t().dataQual(qualLevel(m))}</span>`;
 
 // Generations left: free + this month's plan + top-up credits.
 const leftOf = (me) => (me ? me.freeLeft + me.credits + (me.plan?.left || 0) : 0);
@@ -714,7 +722,7 @@ function render(result, { animate = false } = {}) {
           <div class="clockCol">${clock(m)}<input type="checkbox" class="chk" title="${t().addedOne}"></div>
           <div><div class="teams">${esc(m.fixture.home)} – ${esc(m.fixture.away)}</div>
             <div class="meta">${esc(country(m.fixture.country))} · ${esc(m.fixture.leagueName)} · ${when(m.fixture.kickoff)}</div></div>
-          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p" title="${t().chanceHint}">${t().chance} ${pct(m.adjusted)}</div>
+          <div class="odds"><div class="o">${m.fairOdds.toFixed(2)}</div><div class="p" title="${t().chanceHint}">${t().chance} ${pct(m.adjusted)}</div>${qualTag(m)}
             <label class="yours">${t().yourOdds}<input type="number" min="1.01" step="0.01" inputmode="decimal"></label><div class="cmp"></div></div>
           <div class="legs">${m.legs.map((l) => `<span class="leg">${esc(l.market)}: <b>${esc(l.pick)}</b> <em title="${t().legChanceHint}">${pct(l.probability)}</em></span>`).join('')}</div>
           ${m.explanation ? `<div class="why">${esc(m.explanation)}</div>` : ''}
