@@ -1,0 +1,54 @@
+# Runs on every pull request (including the ones the autodev agent opens) and on pushes to master.
+# A red ✗ on the PR means: don't merge yet.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npx jest --ci
+
+      - name: No bookmaker names or secrets in the code
+        run: |
+          set -e
+          # BiletAI must never name or link a bookmaker (CLAUDE.md, legal position)
+          if grep -RInE -i "superbet|betano|casa pariurilor|fortuna|unibet|betfair|netbet|mozzart|maxbet|winbet|stanleybet|vlad cazino|getsbet" \
+               src client desktop/main.js desktop/preload.js 2>/dev/null; then
+            echo "::error::Bookmaker name found in the app code"; exit 1
+          fi
+          # no API keys committed
+          if grep -RInE "(sk-[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,})" \
+               --exclude-dir=node_modules --exclude-dir=.git . 2>/dev/null; then
+            echo "::error::Something that looks like an API key is in the code"; exit 1
+          fi
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env is committed"; exit 1
+          fi
